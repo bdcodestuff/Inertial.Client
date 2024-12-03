@@ -1,0 +1,43 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <PackageId>Inertial.Client</PackageId>
+    <Version>0.0.1</Version>
+    <Authors>Bryan Macrie</Authors>
+    <RepositoryUrl>https://github.com/bdcodestuff/Inertial.Client</RepositoryUrl>
+    <AssemblyName>Inertial.Client</AssemblyName>
+    <RootNamespace>Inertial.Client</RootNamespace>
+    <Product>Inertial.Client</Product>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="JsCookie.fs" />
+    <Compile Include="NProgress.fs" />
+    <Compile Include="Common.fs" />
+    <Compile Include="Route.fs" />
+    <Compile Include="Inertia.fs" />
+    <Compile Include="Scroll.fs" />
+    <Compile Include="RxSSE.fs" />
+    <Compile Include="Router.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Fable.Browser.Dom" Version="2.18.0" />
+    <PackageReference Include="Fable.Browser.EventSource" Version="1.0.0" />
+    <PackageReference Include="Fable.Core" Version="4.3.0" />
+    <PackageReference Include="Fable.Promise" Version="3.2.0" />
+    <PackageReference Include="Fable.Reaction" Version="3.5.0" />
+    <PackageReference Include="Fable.SimpleHttp" Version="3.6.0" />
+    <PackageReference Include="Sutil" Version="2.0.16" />
+    <PackageReference Update="FSharp.Core" Version="8.0.401" />
+    <PackageReference Include="Thoth.Json" Version="10.2.0" />
+  </ItemGroup>
+
+  <!-- Add source files to "fable" folder in Nuget package -->
+  <ItemGroup>
+    <Content Include="*.fsproj; **\*.fs; **\*.fsi" PackagePath="fable\" />
+  </ItemGroup>
+
+</Project>
