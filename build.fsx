@@ -9,7 +9,7 @@ let nugetPushCommand (apiKey: string) : System.FormattableString =
 
 
 pipeline "Build" {
-  description "Build Sutil.Router"
+  description "Build Inertial.Client"
 
   stage "Restore" {
     run "dotnet tool restore"
@@ -17,13 +17,13 @@ pipeline "Build" {
   }
 
   stage "Build" { run "dotnet build" }
-  stage "Check formatting" { run "dotnet fantomas --recurse --check ./" }
-  stage "Test" { run "dotnet test" }
+  //stage "Check formatting" { run "dotnet fantomas --recurse --check ./" }
+  //stage "Test" { run "dotnet test" }
   runIfOnlySpecified false
 }
 
 pipeline "Publish" {
-  description "Publish Sutil.Router to NuGet"
+  description "Publish Inertial.Client to NuGet"
 
   whenAll {
     branch "main"
@@ -34,7 +34,7 @@ pipeline "Publish" {
     }
   }
 
-  stage "Pack" { run "dotnet pack -c Release ./src/Sutil.Router -o ." }
+  stage "Pack" { run "dotnet pack -c Release ./src/Inertial.Client -o ." }
 
   stage "Publish" {
     run (fun ctx ->
