@@ -36,7 +36,7 @@ module Router =
     isForwardBack
     propsDecoder
     sharedDecoder
-    (doFullReloadOnArrival: PageObj<'Props,'Shared> option -> bool)
+    (doFullReloadOnArrival: bool)
     (progress:ProgressBar)
     (scroll:ScrollPosition)
     (isPartialReload:bool) =
@@ -95,12 +95,12 @@ module Router =
                 pathname = inertiaUrl
                 query = window.location.search
                 pageObj = pageObj
-                allowPartialReload = not isPartialReload
+                allowPartialReload = not isPartialReload // we need this to prevent infinite partial reloads
                 cancellationTokenSource = new CancellationTokenSource()
               } )
 
           // do a page reload if back/forward navigation and page implements this behavior
-          if isForwardBack && (doFullReloadOnArrival pathStore.Value.pageObj) then window.location.reload()
+          if isForwardBack && doFullReloadOnArrival then window.location.reload()
 
         }
 
@@ -149,7 +149,7 @@ module Router =
         false
         propsDecoder
         sharedDecoder
-        (fun _ -> false)
+        false
         progress
         ResetScroll
         true
@@ -180,7 +180,7 @@ module Router =
           false
           propsDecoder
           sharedDecoder
-          (fun _ -> false)
+          false
           progress
           scroll
           false
@@ -204,7 +204,7 @@ module Router =
         false
         propsDecoder
         sharedDecoder
-        (fun _ -> false)
+        false
         progress
         ResetScroll
         false
@@ -227,7 +227,7 @@ module Router =
         false
         propsDecoder
         sharedDecoder
-        (fun _ -> false)
+        false
         progress
         ResetScroll
         false
@@ -250,7 +250,7 @@ module Router =
         false
         propsDecoder
         sharedDecoder
-        (fun _ -> false)
+        false
         progress
         ResetScroll
         false
@@ -278,20 +278,17 @@ module Router =
 
   let renderRouter<'Props,'Shared>
     (router: Store<RouterLocation<'Props,'Shared>>)
-    (shouldRefreshOnBack: PageObj<'Props,'Shared> option -> bool)
-    (shouldReloadOnMount: PageObj<'Props,'Shared> option -> ReloadOnMount)
-    (reloadOnSSE: PageObj<'Props,'Shared> option -> bool)
-    (sharedUserPredicateCheck: 'Shared option -> string array -> bool)
-    (conf:
-      string list ->
-        PageObj<'Props,'Shared> option ->
-          Option<SutilElement ->
-            PageObj<'Props,'Shared> ->
-              SutilElement> ->
-                  SutilElement)
+    //(sharedUserPredicateCheck: 'Shared option -> string array -> bool)
+    (signedInUserId: 'Shared option -> string option)
+    (urlToElement:
+      string list -> // url parts
+        'Props -> // Page props
+          'Shared ->
+            Option<SutilElement -> 'Props -> 'Shared -> SutilElement> -> // optional layout function
+              SutilElement)
     (propsDecoder: string -> Decoder<'Props option>)
     (sharedDecoder: Decoder<'Shared option>)
-    (layout: bool -> ReloadOnMount -> Option<SutilElement -> PageObj<'Props,'Shared> -> SutilElement>) =
+    (layout: Option<SutilElement -> 'Props -> 'Shared -> SutilElement>) =
       // configure the progress bar library
       NProgress.configure {| showSpinner = false |}
 
@@ -337,7 +334,10 @@ module Router =
                     arr
                     |> Array.contains p.``component`` |> not
                   | UserIdIsOneOf arr, Some p ->
-                    sharedUserPredicateCheck p.shared arr
+                    match signedInUserId p.shared with
+                    | Some u -> arr |> Array.contains u
+                    | _ -> false
+                    //sharedUserPredicateCheck p.shared arr
                   | _ -> false)
                 |> Array.contains false
                 |> not
@@ -371,7 +371,12 @@ module Router =
           | OnCompleted -> return ()
         }
 
-      let shouldListenOnSSE = reloadOnSSE router.Value.pageObj
+      let shouldListenOnSSE = // reloadOnSSE router.Value.pageObj
+        match router.Value.pageObj with
+        | Some p' -> p'.realTime
+        | None -> true
+      
+      
       // determine if this sutil component should listen on the sse endpoint
       if shouldListenOnSSE then
 
@@ -395,7 +400,17 @@ module Router =
         }
         Async.StartImmediate main
 
-
+      let shouldRefreshOnBack =
+        match router.Value.pageObj with
+        | Some p' ->
+            if p'.refreshOnBack then
+                match p'.shared with
+                | Some _ -> true
+                | None -> false
+            else
+                false
+        | None -> false
+      
       // add event listener to navigate on back/forward
       window.addEventListener("popstate", fun _ ->
         promise {
@@ -420,14 +435,35 @@ module Router =
 
         Bind.el (router, (fun location ->
 
-            // set page title here
+            
             match location.pageObj with
             | Some obj ->
-              document.title <- obj.title
+              document.title <- obj.title // set page title here
+              
+              // handle reload on first mount here
+              // location.allowPartialReload is a boolean flag that flips in response to whether the incoming request is itself a partial or full page request
+              // it prevents infinite reload loops
+              // the obj.reloadOnMount.shouldReload is a boolean flag set on the server side that specifies if the component is intended to reload on mount or not
+              if (location.allowPartialReload && obj.reloadOnMount.shouldReload) then
+                match obj.reloadOnMount.propsToEval with
+                | Some withProps -> 
+                    reload propsDecoder sharedDecoder router withProps HideProgressBar
+                | None -> ()
+              
             | None -> ()
 
+            
+            
             // parse url and find matching handler with layout if appropriate
-            (conf (getCurrentUrl location) location.pageObj (layout location.allowPartialReload (shouldReloadOnMount location.pageObj)) )))
+            //(urlToElement (getCurrentUrl location) location.pageObj (layout location.allowPartialReload) )))
+            match location.pageObj with
+            | Some obj ->
+              match obj.props, obj.shared with
+              | Some props, Some shared -> 
+                (urlToElement (getCurrentUrl location) props shared layout )
+              | _ -> text "Error loading page data, please refresh"
+            | _ -> text "Error loading page data, please refresh"))
+        
         disposeOnUnmount [router]
       ]
 

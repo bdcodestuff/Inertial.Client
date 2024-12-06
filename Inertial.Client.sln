@@ -15,6 +15,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Files", "Files", "{E5AD2A6A
 		package.json = package.json
 		README.md = README.md
 		vite.config.js = vite.config.js
+		LICENSE = LICENSE
 	EndProjectSection
 EndProject
 Global

@@ -7,19 +7,19 @@
     <Version>0.0.1</Version>
     <Authors>Bryan Macrie</Authors>
     <RepositoryUrl>https://github.com/bdcodestuff/Inertial.Client</RepositoryUrl>
-    <AssemblyName>Inertial.Client</AssemblyName>
-    <RootNamespace>Inertial.Client</RootNamespace>
-    <Product>Inertial.Client</Product>
-    <DebugType>embedded</DebugType>
-    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
-    <Content Include="@(Compile)" Pack="true" PackagePath="fable/%(RelativeDir)%(Filename)%(Extension)" />
-    <Content Include="$(MSBuildThisFileFullPath)" Pack="true" PackagePath="fable/" />
+    <None Include="../../LICENSE" Pack="true" PackagePath=""/>
+    <None Include="../../README.md" Pack="true" PackagePath=""/>
   </ItemGroup>
-  
-  
+
+
   <ItemGroup>
     <Compile Include="JsCookie.fs" />
     <Compile Include="NProgress.fs" />
