@@ -23,7 +23,9 @@ To make this work you need to do the following:
    
    // some helper functions for our decoders
    module Helpers =
-           
+        let emptyDecoder : Decoder<obj> =
+            Decode.object( fun _ -> null )     
+      
         let resultDecoder<'T> (decoder: Decoder<'T>) =
         
             let decoder: Decoder<Result<'T,string>> =                

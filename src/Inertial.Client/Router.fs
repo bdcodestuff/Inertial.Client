@@ -16,8 +16,48 @@ open Core
 
 [<RequireQualifiedAccess>]
 module Router =
+  type NavigationData<'Props,'Shared> =
+    {
+      pathStore:Store<RouterLocation<'Props,'Shared>>
+      method:Method
+      url:string
+      propsToEval:PropsToEval
+      isForwardBack:bool
+      propsDecoder: string -> string -> JsonValue -> Result<'Props option,DecoderError>
+      sharedDecoder: string -> JsonValue -> Result<'Shared option,DecoderError>
+      doFullReloadOnArrival:bool
+      progress:ProgressBar
+      scroll:ScrollPosition
+      isPartialReload:bool
+    }
 
-  // function to parse url into string parts
+  let createNavigation
+      (pathStore:Store<RouterLocation<'Props,'Shared>>)
+      (method:Method)
+      url
+      propsToEval
+      isForwardBack
+      propsDecoder
+      sharedDecoder
+      (doFullReloadOnArrival:bool)
+      (progress:ProgressBar)
+      (scroll:ScrollPosition)
+      (isPartialReload:bool) =
+        {
+          pathStore = pathStore
+          method = method
+          url = url
+          propsToEval = propsToEval
+          isForwardBack = isForwardBack
+          propsDecoder = propsDecoder
+          sharedDecoder = sharedDecoder
+          doFullReloadOnArrival = doFullReloadOnArrival
+          progress = progress
+          scroll = scroll
+          isPartialReload = isPartialReload
+        }
+   
+  // function to parse browser location url into string parts
   let getCurrentUrl (router: RouterLocation<'Props,'Shared>) =
     let route =
       router.pathname.TrimStart('/').TrimEnd('/')
@@ -27,80 +67,71 @@ module Router =
     else
       splitRoute route
 
-  /// triggers a partial page load using JSON returned from server
-  let navigate
-    (pathStore: Store<RouterLocation<'Props,'Shared>>)
-    (method:Method)
-    url
-    propsToEval
-    isForwardBack
-    propsDecoder
-    sharedDecoder
-    (doFullReloadOnArrival: bool)
-    (progress:ProgressBar)
-    (scroll:ScrollPosition)
-    (isPartialReload:bool) =
+  /// triggers a partial page load and reads JSON server response
+  let navigateTo (n:NavigationData<'Props,'Shared>) =
       let inner =
         promise {
-          match progress with
+          match n.progress with
           | ShowProgressBar -> NProgress.start ()
           | HideProgressBar -> ()
-
+          // component name
           let currentComponent =
-              match pathStore.Value.pageObj with
+              match n.pathStore.Value.pageObj with
               | Some o -> o.``component``
               | None -> ""
+          // connection id
           let currentId =
-              match pathStore.Value.pageObj with
+              match n.pathStore.Value.pageObj with
               | Some o -> o.connectionId
               | None -> ""
+          
           let pageObjAsync =
             inertiaHttp
-                url
-                method
-                propsToEval
+                n.url
+                n.method
+                n.propsToEval
                 currentComponent
                 currentId
-                propsDecoder
-                sharedDecoder
-          // get the page obj returned by the server as JSON from the ajax call
+                n.propsDecoder
+                n.sharedDecoder
+          // asynchronously converts inbound JSON to domain PageObj record type
           let! pageObj =
-            Async.StartAsPromise(pageObjAsync,pathStore.Value.cancellationTokenSource.Token)
+            Async.StartAsPromise(pageObjAsync,n.pathStore.Value.cancellationTokenSource.Token)
 
-          // inertia passes in an url that we use to override the browser url
+          // inertia can pass in an optional url; if present it should override the browser url
           let inertiaUrl =
             match pageObj with
-            | Some p when p.url <> url ->
+            | Some p when p.url <> n.url ->
               p.url
-            | _ -> url
+            | _ -> n.url
 
-          // don't add to history stack if user pressed forward or back buttons, or if the desired url hasn't changed
-          if not isForwardBack && $"{window.location.pathname}{window.location.search}" <> inertiaUrl then
+          // update browser history stack
+          // but ignore if user pressed forward or back buttons, or if the desired url hasn't changed
+          if not n.isForwardBack && $"{window.location.pathname}{window.location.search}" <> inertiaUrl then
             window.history.pushState((), "", inertiaUrl)
             window.history.scrollRestoration <- ScrollRestoration.Manual
 
           // modify router location store
-          pathStore
+          n.pathStore
             |> Store.modify (fun a ->
               // cancel any requests still in progress
               a.cancellationTokenSource.Cancel()
               // dispose the token source
               a.cancellationTokenSource.Dispose()
 
-              // save scroll location of outgoing page on each router location change
-              // so we can restore later if requested
+              // save scroll location of outgoing page on each router location change to enable restoring it later if requested
               Scroll.save a.pathname window.pageYOffset;
 
               {a with
                 pathname = inertiaUrl
                 query = window.location.search
                 pageObj = pageObj
-                allowPartialReload = not isPartialReload // we need this to prevent infinite partial reloads
+                allowPartialReload = not n.isPartialReload // we need this to prevent infinite partial reloads
                 cancellationTokenSource = new CancellationTokenSource()
               } )
 
           // do a page reload if back/forward navigation and page implements this behavior
-          if isForwardBack && doFullReloadOnArrival then window.location.reload()
+          if n.isForwardBack && n.doFullReloadOnArrival then window.location.reload()
 
         }
 
@@ -110,21 +141,21 @@ module Router =
         .``then``(
           onfulfilled=(
             fun () ->
-              match progress with
-              | ShowProgressBar when not isForwardBack -> NProgress.``done`` ()
+              match n.progress with
+              | ShowProgressBar when not n.isForwardBack -> NProgress.``done`` ()
               | _ -> ()
               // restore y-scroll position is it's stored in session storage
-              match scroll with
+              match n.scroll with
               | ResetScroll -> ()
               | KeepVerticalScroll url -> window.scroll(0,(Scroll.restore url))
             )
           )
         .catch(
-          // catch errors (usually cancelled request errors)
+          // catch errors (most commonly this fires because a pending page request was cancelled by the user making a newer, superseding page load request)
           fun err ->
 
-            match progress with
-            | ShowProgressBar when not isForwardBack -> NProgress.``done`` ()
+            match n.progress with
+            | ShowProgressBar when not n.isForwardBack -> NProgress.``done`` ()
             | _ -> ()
 
             let toPrint =
@@ -133,15 +164,40 @@ module Router =
               | err -> err
 
             printfn $"{toPrint}")
+        |> Promise.start
 
-
+  let doNav method =
+    fun
+      (pathStore: Store<RouterLocation<'Props,'Shared>>)
+      url
+      propsToGet
+      propsDecoder
+      sharedDecoder
+      progress
+       -> createNavigation
+            pathStore
+            method
+            url
+            propsToGet
+            false
+            propsDecoder
+            sharedDecoder
+            false
+            progress
+            ResetScroll
+            false
+  
+  /// Triggers page to reload itself -- server side client interprets this as a partial data request and will send evaluate and send back any asynchronous page props that match in PropsToEval 
+  
+  
+  
   let reload
     propsDecoder
     sharedDecoder
-    (pathStore: Store<RouterLocation<'Props,'Shared>>)
+    (pathStore:Store<RouterLocation<'Props,'Shared>>)
     propsToEval
     progress =
-      navigate
+      createNavigation
         pathStore
         (Get [])
         $"{window.location.pathname}{window.location.search}"
@@ -153,10 +209,12 @@ module Router =
         progress
         ResetScroll
         true
-        |> Promise.start
+      |> navigateTo
+      
 
+  /// Triggers loading of a new page client-side
   let link
-    (defaultApply: seq<SutilElement>)
+    (defaultApply: seq<SutilElement>) // these are default Sutil elements to include in every link
     propsDecoder
     sharedDecoder
     (pathStore: Store<RouterLocation<'Props,'Shared>>)
@@ -169,94 +227,40 @@ module Router =
      =
       Html.a (defaultApply
               |> Seq.append apply
-              |> Seq.append [EngineHelpers.Attr.href href; onClick (fun e ->
-        e.preventDefault()
+              |> Seq.append [
+                              EngineHelpers.Attr.href href
+                              onClick (fun e -> e.preventDefault()
+                                                createNavigation
+                                                  pathStore
+                                                  method
+                                                  href
+                                                  propsToGet
+                                                  false
+                                                  propsDecoder
+                                                  sharedDecoder
+                                                  false
+                                                  progress
+                                                  scroll
+                                                  false
+                                                |> navigateTo
+                            ) []])
+  
 
-        navigate
-          pathStore
-          method
-          href
-          propsToGet
-          false
-          propsDecoder
-          sharedDecoder
-          false
-          progress
-          scroll
-          false
-          |> Promise.start
-      ) []])
+  
+  /// Triggers client-side POST request
+  let post pathStore propsDecoder sharedDecoder url data propsToGet progress = doNav (Post data) pathStore url propsToGet propsDecoder sharedDecoder progress |> navigateTo
+  
+  /// Triggers client-side PUT request
+  let put pathStore propsDecoder sharedDecoder url data propsToGet progress = doNav (Put data) pathStore url propsToGet propsDecoder sharedDecoder progress |> navigateTo
+  
+  /// Triggers client-side PATCH request
+  let patch pathStore propsDecoder sharedDecoder url data propsToGet progress = doNav (Patch data) pathStore url propsToGet propsDecoder sharedDecoder progress |> navigateTo
+  
+  /// Triggers client-side DELETE request
+  let delete pathStore propsDecoder sharedDecoder url propsToGet progress = doNav Delete pathStore url propsToGet propsDecoder sharedDecoder progress |> navigateTo
 
-  let post
-    propsDecoder
-    sharedDecoder
-    (pathStore: Store<RouterLocation<'Props,'Shared>>)
-    url
-    data
-    propsToGet
-    progress
-     =
-      navigate
-        pathStore
-        (Post data)
-        url
-        propsToGet
-        false
-        propsDecoder
-        sharedDecoder
-        false
-        progress
-        ResetScroll
-        false
-        |> Promise.start
-
-  let put
-    propsDecoder
-    sharedDecoder
-    (pathStore: Store<RouterLocation<'Props,'Shared>>)
-    url
-    data
-    propsToGet
-    progress
-     =
-      navigate
-        pathStore
-        (Put data)
-        url
-        propsToGet
-        false
-        propsDecoder
-        sharedDecoder
-        false
-        progress
-        ResetScroll
-        false
-        |> Promise.start
-
-  let patch
-    propsDecoder
-    sharedDecoder
-    (pathStore: Store<RouterLocation<'Props,'Shared>>)
-    url
-    data
-    propsToGet
-    progress
-     =
-      navigate
-        pathStore
-        (Patch data)
-        url
-        propsToGet
-        false
-        propsDecoder
-        sharedDecoder
-        false
-        progress
-        ResetScroll
-        false
-        |> Promise.start
-
-  let createRouter<'Props,'Shared>() =
+  /// Instantiate a router using Sutil store to trigger reactive responses on any change
+  let createRouterStore<'Props,'Shared>() =
     Store.make(
         {
           pathname = window.location.pathname
@@ -266,8 +270,9 @@ module Router =
           cancellationTokenSource = new CancellationTokenSource()
         })
 
+  // If a full page reload occurs the PageObj must be extracted from the body data-page attribute
   let initialPageObjAttr () = document.getElementById("sutil-app").getAttribute("data-page")
-
+  // Parse PageObj json string using Props and Shared Thoth decoders
   let initialPageObj propsDecoder sharedDecoder =
     match PageObj.fromJson (initialPageObjAttr ()) propsDecoder sharedDecoder with
     | Ok p ->
@@ -280,7 +285,7 @@ module Router =
     (router: Store<RouterLocation<'Props,'Shared>>)
     //(sharedUserPredicateCheck: 'Shared option -> string array -> bool)
     (signedInUserId: 'Shared option -> string option)
-    (urlToElement:
+    (urlToComponent:
       string list -> // url parts
         'Props -> // Page props
           'Shared ->
@@ -288,7 +293,8 @@ module Router =
               SutilElement)
     (propsDecoder: string -> Decoder<'Props option>)
     (sharedDecoder: Decoder<'Shared option>)
-    (layout: Option<SutilElement -> 'Props -> 'Shared -> SutilElement>) =
+    (layout: Option<SutilElement -> 'Props -> 'Shared -> SutilElement>)
+    (sseEndpointUrl : string option) =
       // configure the progress bar library
       NProgress.configure {| showSpinner = false |}
 
@@ -316,61 +322,6 @@ module Router =
               query = window.location.search
               pageObj = initial} )
 
-      // check if the inbound sse event matches the predicate
-      let eventPredicates event page =
-          match event, page  with
-            | Ok ev, Some p ->
-              printfn $"event: {ev}"
-
-              let shouldReload =
-                  ev.predicates.predicates |> Array.map (fun pred ->
-                  match pred, router.Value.pageObj  with
-                  | ComponentIsOneOf arr, Some p ->
-                    arr
-                    |> Array.contains p.``component`` ||
-                    arr
-                    |> Array.contains "*"
-                  | ComponentIsAnyExcept arr, Some p ->
-                    arr
-                    |> Array.contains p.``component`` |> not
-                  | UserIdIsOneOf arr, Some p ->
-                    match signedInUserId p.shared with
-                    | Some u -> arr |> Array.contains u
-                    | _ -> false
-                    //sharedUserPredicateCheck p.shared arr
-                  | _ -> false)
-                |> Array.contains false
-                |> not
-
-              let notEmptyAndNotSameUser =
-                match ev.connectionId with
-                | Some evId ->
-                  evId <> "" && p.connectionId <> evId
-                | None -> false
-
-              shouldReload && notEmptyAndNotSameUser
-            | Error e, _ -> failwith $"{e}"
-            | _ -> failwith "Couldn't decode page data"
-
-      // reload function to fire if an SSE value satisfies the predicate
-      let ssePartialReload (notification:Notification<Result<InertialSSEEvent,string>>) =
-        async {
-          match notification with
-          | OnNext n ->
-            match n with
-            | Ok ev ->
-              return
-                reload
-                  propsDecoder
-                  sharedDecoder
-                  router
-                  ev.predicates.propsToEval
-                  ProgressBar.ShowProgressBar
-            | Error err -> return printfn $"{err}"
-          | OnError exn -> return printfn $"{exn.Message}"
-          | OnCompleted -> return ()
-        }
-
       let shouldListenOnSSE = // reloadOnSSE router.Value.pageObj
         match router.Value.pageObj with
         | Some p' -> p'.realTime
@@ -379,8 +330,9 @@ module Router =
       
       // determine if this sutil component should listen on the sse endpoint
       if shouldListenOnSSE then
-
-        let eventSource = EventSource.Create("/sse")
+        let url = defaultArg sseEndpointUrl "/sse" // defaults to "/sse" if url not specified
+        // define endpoint
+        let eventSource = EventSource.Create(url)
         // make an observable stream of SSE values
         // ignore the first event, this represents the last "leftover" event
         // filter to only those meeting the predicate
@@ -388,18 +340,20 @@ module Router =
         let observable =
           RxSSE.ofEventSource<Result<InertialSSEEvent,string>> eventSource
           |> AsyncRx.skip 1
-          |> AsyncRx.filter(fun event -> eventPredicates event router.Value.pageObj)
+          |> AsyncRx.filter (RxSSE.eventPredicates router signedInUserId)
           |> AsyncRx.delay 1000
           //|> AsyncRx.distinctUntilChanged
 
-        // start the subscription
+        // define subscription
         let main = async {
           // trigger the ssePartialReload for each stream element being subscribed to
-          let! _ = observable.SubscribeAsync ssePartialReload
+          let! _ = observable.SubscribeAsync (RxSSE.ssePartialReload reload propsDecoder sharedDecoder router ProgressBar.ShowProgressBar)
           return ()
         }
+        // subscribe!
         Async.StartImmediate main
 
+      // function to determine if the component refreshes itself when it is rendered via forward/back request (prevents stale data from showing due to browser caching)
       let shouldRefreshOnBack =
         match router.Value.pageObj with
         | Some p' ->
@@ -413,29 +367,25 @@ module Router =
       
       // add event listener to navigate on back/forward
       window.addEventListener("popstate", fun _ ->
-        promise {
-          do!
-            navigate
-              router
-              (Get [])
-              $"{window.location.pathname}{window.location.search}"
-              EvalAllProps
-              true
-              propsDecoder
-              sharedDecoder
-              shouldRefreshOnBack
-              HideProgressBar
-              (KeepVerticalScroll $"{window.location.pathname}{window.location.search}")
-              false
-        }
-        |> Promise.start)
+        createNavigation
+          router
+          (Get [])
+          $"{window.location.pathname}{window.location.search}"
+          EvalAllProps
+          true
+          propsDecoder
+          sharedDecoder
+          shouldRefreshOnBack
+          HideProgressBar
+          (KeepVerticalScroll $"{window.location.pathname}{window.location.search}")
+          false
+        |> navigateTo )
 
       // render matching SutilElement
       fragment [
 
         Bind.el (router, (fun location ->
 
-            
             match location.pageObj with
             | Some obj ->
               document.title <- obj.title // set page title here
@@ -451,19 +401,16 @@ module Router =
                 | None -> ()
               
             | None -> ()
-
-            
             
             // parse url and find matching handler with layout if appropriate
-            //(urlToElement (getCurrentUrl location) location.pageObj (layout location.allowPartialReload) )))
             match location.pageObj with
             | Some obj ->
               match obj.props, obj.shared with
               | Some props, Some shared -> 
-                (urlToElement (getCurrentUrl location) props shared layout )
+                (urlToComponent (getCurrentUrl location) props shared layout )
               | _ -> text "Error loading page data, please refresh"
             | _ -> text "Error loading page data, please refresh"))
         
-        disposeOnUnmount [router]
+        disposeOnUnmount [router] // free resources
       ]
 

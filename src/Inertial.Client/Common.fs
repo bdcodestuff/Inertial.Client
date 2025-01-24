@@ -6,7 +6,7 @@ open System
 open System.Threading
 
 module Core =
-
+  
   let emptyDecoder : Decoder<obj> = Decode.object(fun _ -> null)
 
   type ScrollPosition =
@@ -108,6 +108,7 @@ module Core =
 
   type RealTimePredicates =
     | ComponentIsOneOf of string array
+    | ComponentIsAny
     | ComponentIsAnyExcept of string array
     | UserIdIsOneOf of string array
     static member decoder =
@@ -115,7 +116,14 @@ module Core =
 
         let decodeUserIdIsOneOf =
             Decode.field "UserIdIsOneOf" (Decode.array Decode.string) |> Decode.map UserIdIsOneOf
-
+            
+        let decodeComponentIsAny =
+            Decode.string
+              |> Decode.andThen
+              (function
+              | "ComponentIsAny" -> Decode.succeed ComponentIsAny
+              | a -> failwith $"Cannot decode RealtimePredicate: {a}")       
+        
         let decodeComponentIsOneOf =
             Decode.field "ComponentIsOneOf" (Decode.array Decode.string) |> Decode.map ComponentIsOneOf
 
@@ -124,7 +132,7 @@ module Core =
 
         // Now that we know how to handle each case, we say that
         // at least of the decoder should succeed to be a valid `Query` representation
-        Decode.oneOf [ decodeUserIdIsOneOf ; decodeComponentIsOneOf ; decodeComponentIsAnyExcept ]
+        Decode.oneOf [ decodeUserIdIsOneOf ; decodeComponentIsOneOf ; decodeComponentIsAnyExcept ; decodeComponentIsAny ]
       decoder
 
     type Predicates =
@@ -181,14 +189,17 @@ module Core =
     }
 
     static member fromJson (json:string) propsDecoder sharedDecoder =
+      
       let decodeProps (componentName:string) =
         Decode.object (fun get ->
+            //get.Required.Field componentName (propsDecoder componentName)
             get.Required.Field componentName (propsDecoder componentName)
           )
 
       let decoder : Decoder<PageObj<'Props,'Shared>> =
         Decode.object (fun get ->
           let componentName = get.Required.Field "component" Decode.string
+          
 
           //let asyncData = get.Required.Field "asyncData" (Decode.array (Decode.tuple2 Decode.string Decode.string))
 
@@ -200,7 +211,6 @@ module Core =
             title = get.Required.Field "title" Decode.string
             refreshOnBack = get.Required.Field "refreshOnBack" Decode.bool
             reloadOnMount = get.Required.Field "reloadOnMount" (Decode.object (fun get -> { shouldReload = get.Required.Field "shouldReload" Decode.bool ; propsToEval = get.Optional.Field "propsToEval" PropsToEval.decoder }) ) // Decode.bool PropsToEval.decoder)
-            //realTimeUpdateOn = get.Required.Field "realTimeUpdateOn" (Decode.tuple2 (Decode.array RealTimeUpdatePredicates.decoder) (Decode.array Decode.string ))
             realTime = get.Required.Field "realTime" Decode.bool
             props = get.Required.Field "props" (decodeProps componentName)
             shared = get.Required.Field "shared" sharedDecoder
