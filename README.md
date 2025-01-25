@@ -85,14 +85,13 @@ To make this work you need to do the following:
         | Index of IndexPage
         static member index = nameof Props.Index
    
-        static member decoder (name: string) : Decoder<Props option> = 
+        static member decoder (name: string) : Decoder<Props> = 
         // note that this decoder is a function that takes a string matching the component name 
         // and returns a decoder that has been mapped back to Option<Props>
             match name with
-            | name when name = Props.index ->
+            | "Index" = Props.index ->
                 IndexPage.decoder 
                 |> Decode.map Index
-                |> Decode.map Some
             | notFound -> 
                  failwith 
                      $"Could not find matching decoder for component named: {notFound}"
@@ -145,7 +144,7 @@ To make this work you need to do the following:
    router: Store<RouterLocation<'Props,'Shared>> -> 
    signedInUserId: 'Shared option -> string option -> 
    urlToElement: (string list -> 'Props -> 'Shared -> Option<(SutilElement -> 'Props -> 'Shared -> SutilElement)> -> SutilElement) -> 
-   propsDecoder: (string -> Thoth.Json.Decoder<'Props option>) -> 
+   propsDecoder: (string -> Thoth.Json.Decoder<'Props>) -> 
    sharedDecoder: Thoth.Json.Decoder<'Shared option> -> 
    layout: (Option<(SutilElement -> 'Props -> 'Shared -> SutilElement)>) -> 
    SutilElement

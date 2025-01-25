@@ -291,15 +291,17 @@ module Router =
           'Shared ->
             Option<SutilElement -> 'Props -> 'Shared -> SutilElement> -> // optional layout function
               SutilElement)
-    (propsDecoder: string -> Decoder<'Props option>)
+    (propsDecoder: string -> Decoder<'Props>)
     (sharedDecoder: Decoder<'Shared option>)
     (layout: Option<SutilElement -> 'Props -> 'Shared -> SutilElement>)
     (sseEndpointUrl : string option) =
       // configure the progress bar library
       NProgress.configure {| showSpinner = false |}
-
+      
+      let propsDecoderOpt = fun name -> propsDecoder name |> Decode.map Some
+      
       // get initial pageObj
-      let initial = initialPageObj propsDecoder sharedDecoder
+      let initial = initialPageObj propsDecoderOpt sharedDecoder
 
       // inertia passes in an url that we use to override the browser url
       let inertiaUrl =
@@ -347,7 +349,7 @@ module Router =
         // define subscription
         let main = async {
           // trigger the ssePartialReload for each stream element being subscribed to
-          let! _ = observable.SubscribeAsync (RxSSE.ssePartialReload reload propsDecoder sharedDecoder router ProgressBar.ShowProgressBar)
+          let! _ = observable.SubscribeAsync (RxSSE.ssePartialReload reload propsDecoderOpt sharedDecoder router ProgressBar.ShowProgressBar)
           return ()
         }
         // subscribe!
@@ -373,7 +375,7 @@ module Router =
           $"{window.location.pathname}{window.location.search}"
           EvalAllProps
           true
-          propsDecoder
+          propsDecoderOpt
           sharedDecoder
           shouldRefreshOnBack
           HideProgressBar
@@ -397,7 +399,7 @@ module Router =
               if (location.allowPartialReload && obj.reloadOnMount.shouldReload) then
                 match obj.reloadOnMount.propsToEval with
                 | Some withProps -> 
-                    reload propsDecoder sharedDecoder router withProps HideProgressBar
+                    reload propsDecoderOpt sharedDecoder router withProps HideProgressBar
                 | None -> ()
               
             | None -> ()
