@@ -192,8 +192,8 @@ module Router =
   
   
   let reload
-    propsDecoder
-    sharedDecoder
+    (propsDecoder : string -> Decoder<'Props>)
+    (sharedDecoder : Decoder<'Shared>)
     (pathStore:Store<RouterLocation<'Props,'Shared>>)
     propsToEval
     progress =
@@ -203,8 +203,8 @@ module Router =
         $"{window.location.pathname}{window.location.search}"
         propsToEval
         false
-        propsDecoder
-        sharedDecoder
+        (fun name -> propsDecoder name |> Decode.map Some) // map to option
+        (sharedDecoder |> Decode.map Some) // map to option
         false
         progress
         ResetScroll
@@ -215,8 +215,8 @@ module Router =
   /// Triggers loading of a new page client-side
   let link
     (defaultApply: seq<SutilElement>) // these are default Sutil elements to include in every link
-    propsDecoder
-    sharedDecoder
+    (propsDecoder: string -> Decoder<'Props>)
+    (sharedDecoder: Decoder<'Shared>)
     (pathStore: Store<RouterLocation<'Props,'Shared>>)
     (method: Method)
     href
@@ -236,8 +236,8 @@ module Router =
                                                   href
                                                   propsToGet
                                                   false
-                                                  propsDecoder
-                                                  sharedDecoder
+                                                  (fun name -> propsDecoder name |> Decode.map Some)
+                                                  (sharedDecoder |> Decode.map Some)
                                                   false
                                                   progress
                                                   scroll
@@ -248,16 +248,17 @@ module Router =
 
   
   /// Triggers client-side POST request
-  let post pathStore propsDecoder sharedDecoder url data propsToGet progress = doNav (Post data) pathStore url propsToGet propsDecoder sharedDecoder progress |> navigateTo
+  let post pathStore propsDecoder sharedDecoder url data propsToGet progress =
+    doNav (Post data) pathStore url propsToGet (fun name -> propsDecoder name |> Decode.map Some) (sharedDecoder |> Decode.map Some) progress |> navigateTo
   
   /// Triggers client-side PUT request
-  let put pathStore propsDecoder sharedDecoder url data propsToGet progress = doNav (Put data) pathStore url propsToGet propsDecoder sharedDecoder progress |> navigateTo
+  let put pathStore propsDecoder sharedDecoder url data propsToGet progress = doNav (Put data) pathStore url propsToGet (fun name -> propsDecoder name |> Decode.map Some) (sharedDecoder |> Decode.map Some) progress |> navigateTo
   
   /// Triggers client-side PATCH request
-  let patch pathStore propsDecoder sharedDecoder url data propsToGet progress = doNav (Patch data) pathStore url propsToGet propsDecoder sharedDecoder progress |> navigateTo
+  let patch pathStore propsDecoder sharedDecoder url data propsToGet progress = doNav (Patch data) pathStore url propsToGet (fun name -> propsDecoder name |> Decode.map Some) (sharedDecoder |> Decode.map Some) progress |> navigateTo
   
   /// Triggers client-side DELETE request
-  let delete pathStore propsDecoder sharedDecoder url propsToGet progress = doNav Delete pathStore url propsToGet propsDecoder sharedDecoder progress |> navigateTo
+  let delete pathStore propsDecoder sharedDecoder url propsToGet progress = doNav Delete pathStore url propsToGet (fun name -> propsDecoder name |> Decode.map Some) (sharedDecoder |> Decode.map Some) progress |> navigateTo
 
   /// Instantiate a router using Sutil store to trigger reactive responses on any change
   let createRouterStore<'Props,'Shared>() =
@@ -350,7 +351,7 @@ module Router =
         // define subscription
         let main = async {
           // trigger the ssePartialReload for each stream element being subscribed to
-          let! _ = observable.SubscribeAsync (RxSSE.ssePartialReload reload propsDecoderOpt sharedDecoderOpt router ProgressBar.ShowProgressBar)
+          let! _ = observable.SubscribeAsync (RxSSE.ssePartialReload reload propsDecoder sharedDecoder router ProgressBar.ShowProgressBar)
           return ()
         }
         // subscribe!
@@ -400,7 +401,7 @@ module Router =
               if (location.allowPartialReload && obj.reloadOnMount.shouldReload) then
                 match obj.reloadOnMount.propsToEval with
                 | Some withProps -> 
-                    reload propsDecoderOpt sharedDecoderOpt router withProps HideProgressBar
+                    reload propsDecoder sharedDecoder router withProps HideProgressBar
                 | None -> ()
               
             | None -> ()

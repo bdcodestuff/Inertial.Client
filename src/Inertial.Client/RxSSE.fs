@@ -81,9 +81,10 @@ module RxSSE =
 
     // reload function to fire if an incoming SSE value satisfies the predicate
     let ssePartialReload
-      (reloadFn: (string -> string -> JsonValue -> Result<'Props option,DecoderError>) -> Decoder<'Shared option> -> Store<RouterLocation<'Props,'Shared>> -> PropsToEval -> ProgressBar -> unit)
-      propsDecoder
-      sharedDecoder
+      (reloadFn:
+        (string -> string -> JsonValue -> Result<'Props,DecoderError>) -> Decoder<'Shared> -> Store<RouterLocation<'Props,'Shared>> -> PropsToEval -> ProgressBar -> unit)
+      (propsDecoder: string -> Decoder<'Props>)
+      (sharedDecoder: Decoder<'Shared>)
       router
       progressBar
       (notification:Notification<Result<InertialSSEEvent,string>>)=
