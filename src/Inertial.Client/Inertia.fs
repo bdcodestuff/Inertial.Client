@@ -1,17 +1,24 @@
 namespace Inertial.Client
 
+open System
 open Fable.SimpleHttp
 open Microsoft.FSharp.Control
 open Thoth.Json
 open Core
 
 module Inertia =
+  
+  let forceRefreshUrl response =
+    response.responseHeaders
+    |> Map.tryFind "x-inertial-location"
+  
   let addInertiaHeaders
     cookie
     propsToGet
     currentComponentName
     currentId
-    isSSEResponse
+    isSSETriggeredResponse
+    isReloadAfterMount
     version
     input =
       // add base inertia headers
@@ -43,13 +50,19 @@ module Inertia =
           | None -> withPartialDataHeaders
       
       let withSSE =
-        if isSSEResponse then
-          withCookie |> Http.header (Headers.create "X-Inertial-SSE-Response" "true")
+        if isSSETriggeredResponse then
+          withCookie |> Http.header (Headers.create "X-Inertial-SSE" "true")
         else
-          withCookie
+          withCookie |> Http.header (Headers.create "X-Inertial-SSE" "false")
+        
+      let withReloadAfterMount =
+        if isReloadAfterMount then
+          withSSE |> Http.header (Headers.create "X-Inertial-Reload" "true")
+        else
+          withSSE |> Http.header (Headers.create "X-Inertial-Reload" "false")
           
       let withVersion =
-        withSSE |> Http.header (Headers.create "X-Inertial-Version" version)
+        withReloadAfterMount |> Http.header (Headers.create "X-Inertial-Version" version)
         
       withVersion
 
@@ -59,12 +72,13 @@ module Inertia =
     propsToGet
     currentComponentName
     currentId
-    isSSEResponse
+    isSSETriggeredResponse
+    isReloadAfterMount
     version
     propsDecoder
     sharedDecoder
 
-    : Async<PageObj<'Props,'Shared> option> =
+    : Async<String option * PageObj<'Props,'Shared> option> =
       let cookie = JsCookie.get "XSRF-TOKEN"
       let dataMap = httpVerb.ToDataMap()
       let includeData = not dataMap.IsEmpty && httpVerb <> Delete
@@ -79,17 +93,22 @@ module Inertia =
             Http.request url
             |> Http.method (httpVerb.ToMethodHttp())
             |> addData
-            |> addInertiaHeaders cookie propsToGet currentComponentName currentId isSSEResponse version
+            |> addInertiaHeaders cookie propsToGet currentComponentName currentId isSSETriggeredResponse isReloadAfterMount version
             |> Http.send
 
-          match response.statusCode with
-          | 200 | 404 | 403 ->
+          //printfn $"{response}"
+          
+          let forceRefreshUrl = forceRefreshUrl response
+          
+          match forceRefreshUrl, response.statusCode with
+          | Some url, _ -> return (Some url, None)
+          | None, 200 | None, 404 | None, 403 ->
             match PageObj.fromJson response.responseText propsDecoder sharedDecoder with
-            | Ok p -> return Some p
+            | Ok p -> return None, Some p
             | Error err ->
               printfn $"error parsing JSON reply: {err}"
-              return None
+              return None, None
           | _ ->
-            return None
+            return None, None
       }
 

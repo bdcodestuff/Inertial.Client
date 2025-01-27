@@ -101,47 +101,55 @@ module Router =
                 currentComponent
                 currentId
                 n.isSSEResponse
+                n.isPartialReload
                 version
                 n.propsDecoder
                 n.sharedDecoder
+                
           // asynchronously converts inbound JSON to domain PageObj record type
-          let! pageObj =
+          let! forceRefreshUrl, pageObj =
             Async.StartAsPromise(pageObjAsync,n.pathStore.Value.cancellationTokenSource.Token)
 
-          // inertia can pass in an optional url; if present it should override the browser url
-          let inertiaUrl =
-            match pageObj with
-            | Some p when p.url <> n.url ->
-              p.url
-            | _ -> n.url
+          match forceRefreshUrl with
+          | Some url ->
+            // if force refresh requested trigger it here
+            window.location.href <- url
+          | None -> 
+          
+            // inertia can pass in an optional url; if present it should override the browser url
+            let inertiaUrl =
+              match pageObj with
+              | Some p when p.url <> n.url ->
+                p.url
+              | _ -> n.url
 
-          // update browser history stack
-          // but ignore if user pressed forward or back buttons, or if the desired url hasn't changed
-          if not n.isForwardBack && $"{window.location.pathname}{window.location.search}" <> inertiaUrl then
-            window.history.pushState((), "", inertiaUrl)
-            window.history.scrollRestoration <- ScrollRestoration.Manual
+            // update browser history stack
+            // but ignore if user pressed forward or back buttons, or if the desired url hasn't changed
+            if not n.isForwardBack && $"{window.location.pathname}{window.location.search}" <> inertiaUrl then
+              window.history.pushState((), "", inertiaUrl)
+              window.history.scrollRestoration <- ScrollRestoration.Manual
 
-          // modify router location store
-          n.pathStore
-            |> Store.modify (fun a ->
-              // cancel any requests still in progress
-              a.cancellationTokenSource.Cancel()
-              // dispose the token source
-              a.cancellationTokenSource.Dispose()
+            // modify router location store
+            n.pathStore
+              |> Store.modify (fun a ->
+                // cancel any requests still in progress
+                a.cancellationTokenSource.Cancel()
+                // dispose the token source
+                a.cancellationTokenSource.Dispose()
 
-              // save scroll location of outgoing page on each router location change to enable restoring it later if requested
-              Scroll.save a.pathname window.pageYOffset;
+                // save scroll location of outgoing page on each router location change to enable restoring it later if requested
+                Scroll.save a.pathname window.pageYOffset;
 
-              {a with
-                pathname = inertiaUrl
-                query = window.location.search
-                pageObj = pageObj
-                allowPartialReload = not n.isPartialReload // we need this to prevent infinite partial reloads
-                cancellationTokenSource = new CancellationTokenSource()
-              } )
+                {a with
+                  pathname = inertiaUrl
+                  query = window.location.search
+                  pageObj = pageObj
+                  allowPartialReload = not n.isPartialReload // we need this to prevent infinite partial reloads
+                  cancellationTokenSource = new CancellationTokenSource()
+                } )
 
-          // do a page reload if back/forward navigation and page implements this behavior
-          if n.isForwardBack && n.doFullReloadOnArrival then window.location.reload()
+            // do a page reload if back/forward navigation and page implements this behavior
+            if n.isForwardBack && n.doFullReloadOnArrival then window.location.reload()
 
         }
 
@@ -417,7 +425,7 @@ module Router =
                 match obj.reloadOnMount.propsToEval with
                 | Some withProps -> 
                     reload propsDecoder sharedDecoder router withProps HideProgressBar false
-                | None -> ()
+                | _ -> ()
               
             | None -> ()
             

@@ -26,33 +26,9 @@ module Core =
     | ShowProgressBar
     | HideProgressBar
 
-
-
-      // static member decoder =
-      // let decoder : Decoder<PropsToEval> =
-      //
-      //     Decode.map2
-      //         (fun pred1 pred2 ->
-      //             printfn "decoding empty"
-      //             match pred1, pred2 with
-      //             | Some _, None -> EvalAllProps
-      //             | None, Some arr -> OnlyEvalProps arr
-      //             | _ -> failwith "Cannot decode PropsToEval"
-      //         )
-      //         (Decode.optional "evalAllProps" emptyDecoder)
-      //         (Decode.optional "onlyEvalProps" (Decode.array Decode.string))
-      // decoder
-
   type PropsToEval =
     | EvalAllProps
     | OnlyEvalProps of string array
-    // static member decoder =
-    //   Decode.string
-    //         |> Decode.andThen
-    //         (function
-    //           | "EvalAllProps" -> Decode.succeed EvalAllProps
-    //           | "OnlyEvalProps" -> Decode.array Decode.string |> Decode.map OnlyEvalProps
-    //           | _ -> failwith "Cannot decode PropsToEval")
 
     static member decoder =
       let decodeEvalAllProps =
@@ -89,8 +65,6 @@ module Core =
         | Delete -> []
         | Get data | Post data | Put data | Patch data -> data
       Map.ofList dataList
-
-
 
 
   let split (splitBy: string) (value: string) =
@@ -144,17 +118,21 @@ module Core =
 
     type InertialSSEEvent =
       {
+        id : Guid
         title : string
         connectionId : string option
         predicates : Predicates
+        origin : string
         firedOn : DateTime
       }
       static member decoder =
         Decode.object (fun get ->
           {
+            id = get.Required.Field "id" Decode.guid
             title = get.Required.Field "title" Decode.string
             connectionId =  get.Optional.Field "connectionId" Decode.string
             predicates = get.Required.Field "predicates" (Decode.object (fun get -> { predicates = get.Required.Field "predicates" (Decode.array RealTimePredicates.decoder) ; propsToEval = get.Required.Field "propsToEval" PropsToEval.decoder }) )// (Decode.tuple2 (Decode.array RealTimePredicates.decoder) PropsToEval.decoder)
+            origin = get.Required.Field "origin" Decode.string
             firedOn = get.Required.Field "firedOn" Decode.datetimeUtc
           })
 
