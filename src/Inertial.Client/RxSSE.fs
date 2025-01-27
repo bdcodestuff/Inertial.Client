@@ -53,9 +53,7 @@ module RxSSE =
               match pred  with
               | ComponentIsOneOf arr ->
                 arr
-                |> Array.contains p.``component`` ||
-                arr
-                |> Array.contains "*"
+                |> Array.contains p.``component``
               | ComponentIsAny -> true
               | ComponentIsAnyExcept arr ->
                 arr
@@ -63,9 +61,7 @@ module RxSSE =
               | UserIdIsOneOf arr ->
                 match signedInUserId p.shared with
                 | Some u -> arr |> Array.contains u
-                | _ -> false
-                //sharedUserPredicateCheck p.shared arr
-              | _ -> false)
+                | _ -> false)
             |> Array.contains false
             |> not
 
@@ -82,18 +78,18 @@ module RxSSE =
     // reload function to fire if an incoming SSE value satisfies the predicate
     let ssePartialReload
       (reloadFn:
-        (string -> string -> JsonValue -> Result<'Props,DecoderError>) -> Decoder<'Shared> -> Store<RouterLocation<'Props,'Shared>> -> PropsToEval -> ProgressBar -> unit)
+        (string -> string -> JsonValue -> Result<'Props,DecoderError>) -> Decoder<'Shared> -> Store<RouterLocation<'Props,'Shared>> -> PropsToEval -> ProgressBar -> bool -> unit)
       (propsDecoder: string -> Decoder<'Props>)
       (sharedDecoder: Decoder<'Shared>)
-      router
+      (router:Store<RouterLocation<'Props,'Shared>>)
       progressBar
-      (notification:Notification<Result<InertialSSEEvent,string>>)=
+      (notification:Notification<Result<InertialSSEEvent,string>>) =
         async {
           match notification with
           | OnNext n ->
             match n with
             | Ok ev ->
-              return reloadFn propsDecoder sharedDecoder router ev.predicates.propsToEval progressBar
+              return reloadFn propsDecoder sharedDecoder router ev.predicates.propsToEval progressBar true
             | Error err -> return printfn $"{err}"
           | OnError exn -> return printfn $"{exn.Message}"
           | OnCompleted -> return ()

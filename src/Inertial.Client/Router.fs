@@ -29,6 +29,7 @@ module Router =
       progress:ProgressBar
       scroll:ScrollPosition
       isPartialReload:bool
+      isSSEResponse:bool
     }
 
   let createNavigation
@@ -42,7 +43,8 @@ module Router =
       (doFullReloadOnArrival:bool)
       (progress:ProgressBar)
       (scroll:ScrollPosition)
-      (isPartialReload:bool) =
+      (isPartialReload:bool)
+      (isSSEResponse:bool) =
         {
           pathStore = pathStore
           method = method
@@ -55,6 +57,7 @@ module Router =
           progress = progress
           scroll = scroll
           isPartialReload = isPartialReload
+          isSSEResponse = isSSEResponse 
         }
    
   // function to parse browser location url into string parts
@@ -84,6 +87,11 @@ module Router =
               match n.pathStore.Value.pageObj with
               | Some o -> o.connectionId
               | None -> ""
+          // version
+          let version =
+              match n.pathStore.Value.pageObj with
+              | Some o -> o.version
+              | None -> ""
           
           let pageObjAsync =
             inertiaHttp
@@ -92,6 +100,8 @@ module Router =
                 n.propsToEval
                 currentComponent
                 currentId
+                n.isSSEResponse
+                version
                 n.propsDecoder
                 n.sharedDecoder
           // asynchronously converts inbound JSON to domain PageObj record type
@@ -196,7 +206,8 @@ module Router =
     (sharedDecoder : Decoder<'Shared>)
     (pathStore:Store<RouterLocation<'Props,'Shared>>)
     propsToEval
-    progress =
+    progress
+    isSSEResponse =
       createNavigation
         pathStore
         (Get [])
@@ -209,6 +220,7 @@ module Router =
         progress
         ResetScroll
         true
+        isSSEResponse
       |> navigateTo
       
 
@@ -242,6 +254,7 @@ module Router =
                                                   progress
                                                   scroll
                                                   false
+                                                  false
                                                 |> navigateTo
                             ) []])
   
@@ -249,16 +262,16 @@ module Router =
   
   /// Triggers client-side POST request
   let post pathStore propsDecoder sharedDecoder url data propsToGet progress =
-    doNav (Post data) pathStore url propsToGet (fun name -> propsDecoder name |> Decode.map Some) (sharedDecoder |> Decode.map Some) progress |> navigateTo
+    doNav (Post data) pathStore url propsToGet (fun name -> propsDecoder name |> Decode.map Some) (sharedDecoder |> Decode.map Some) progress false |> navigateTo
   
   /// Triggers client-side PUT request
-  let put pathStore propsDecoder sharedDecoder url data propsToGet progress = doNav (Put data) pathStore url propsToGet (fun name -> propsDecoder name |> Decode.map Some) (sharedDecoder |> Decode.map Some) progress |> navigateTo
+  let put pathStore propsDecoder sharedDecoder url data propsToGet progress = doNav (Put data) pathStore url propsToGet (fun name -> propsDecoder name |> Decode.map Some) (sharedDecoder |> Decode.map Some) progress false |> navigateTo
   
   /// Triggers client-side PATCH request
-  let patch pathStore propsDecoder sharedDecoder url data propsToGet progress = doNav (Patch data) pathStore url propsToGet (fun name -> propsDecoder name |> Decode.map Some) (sharedDecoder |> Decode.map Some) progress |> navigateTo
+  let patch pathStore propsDecoder sharedDecoder url data propsToGet progress = doNav (Patch data) pathStore url propsToGet (fun name -> propsDecoder name |> Decode.map Some) (sharedDecoder |> Decode.map Some) progress false |> navigateTo
   
   /// Triggers client-side DELETE request
-  let delete pathStore propsDecoder sharedDecoder url propsToGet progress = doNav Delete pathStore url propsToGet (fun name -> propsDecoder name |> Decode.map Some) (sharedDecoder |> Decode.map Some) progress |> navigateTo
+  let delete pathStore propsDecoder sharedDecoder url propsToGet progress = doNav Delete pathStore url propsToGet (fun name -> propsDecoder name |> Decode.map Some) (sharedDecoder |> Decode.map Some) progress false |> navigateTo
 
   /// Instantiate a router using Sutil store to trigger reactive responses on any change
   let createRouterStore<'Props,'Shared>() =
@@ -346,12 +359,13 @@ module Router =
           |> AsyncRx.skip 1
           |> AsyncRx.filter (RxSSE.eventPredicates router signedInUserId)
           |> AsyncRx.delay 1000
-          //|> AsyncRx.distinctUntilChanged
+          |> AsyncRx.distinctUntilChanged
 
         // define subscription
         let main = async {
           // trigger the ssePartialReload for each stream element being subscribed to
-          let! _ = observable.SubscribeAsync (RxSSE.ssePartialReload reload propsDecoder sharedDecoder router ProgressBar.ShowProgressBar)
+          let! _ = observable.SubscribeAsync
+                     (RxSSE.ssePartialReload reload propsDecoder sharedDecoder router ProgressBar.ShowProgressBar)
           return ()
         }
         // subscribe!
@@ -383,6 +397,7 @@ module Router =
           HideProgressBar
           (KeepVerticalScroll $"{window.location.pathname}{window.location.search}")
           false
+          false
         |> navigateTo )
 
       // render matching SutilElement
@@ -401,7 +416,7 @@ module Router =
               if (location.allowPartialReload && obj.reloadOnMount.shouldReload) then
                 match obj.reloadOnMount.propsToEval with
                 | Some withProps -> 
-                    reload propsDecoder sharedDecoder router withProps HideProgressBar
+                    reload propsDecoder sharedDecoder router withProps HideProgressBar false
                 | None -> ()
               
             | None -> ()

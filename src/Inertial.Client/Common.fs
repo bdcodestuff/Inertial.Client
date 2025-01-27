@@ -1,5 +1,6 @@
 namespace Inertial.Client
 
+open Fable.React.Props
 open Thoth.Json
 open Fable.SimpleHttp
 open System
