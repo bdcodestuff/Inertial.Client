@@ -27,19 +27,19 @@ module Inertia =
         |> Http.header (Headers.create "X-Requested-With" "XMLHttpRequest")
         |> Http.header (Headers.create "X-Inertial" "true")
         |> Http.header (Headers.create "X-Inertial-Id" currentId)
-      // add partial data headers
+      // add partial, full data headers
       let withPartialDataHeaders =
-        let partialProps =
-          match propsToGet with
-          | EvalAllProps -> None
-          | OnlyEvalProps props -> Some <| (props |> Array.reduce (fun x y -> $"{x}, {y}") )
-        match partialProps with
-        | Some props ->
+        match propsToGet with
+        | Eager ->
           withInertiaHeaders
-            |> Http.header (Headers.create "X-Inertial-Partial-Component" currentComponentName)
-            |> Http.header (Headers.create "X-Inertial-Partial-Data" props)
-        | None ->
+          |> Http.header (Headers.create "X-Inertial-Full-Component" currentComponentName)
+        | Lazy ->
           withInertiaHeaders
+        | EagerOnly props ->
+          let propList = props |> Array.reduce (fun x y -> $"{x}, {y}")
+          withInertiaHeaders
+          |> Http.header (Headers.create "X-Inertial-Partial-Component" currentComponentName)
+          |> Http.header (Headers.create "X-Inertial-Partial-Data" propList)     
 
       // add CSRF token header
       let withCookie =

@@ -397,7 +397,7 @@ module Router =
           router
           (Get [])
           $"{window.location.pathname}{window.location.search}"
-          EvalAllProps
+          Eager
           true
           propsDecoderOpt
           sharedDecoderOpt

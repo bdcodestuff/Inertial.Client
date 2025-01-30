@@ -27,23 +27,31 @@ module Core =
     | HideProgressBar
 
   type PropsToEval =
-    | EvalAllProps
-    | OnlyEvalProps of string array
+    | Lazy
+    | Eager
+    | EagerOnly of string array
 
     static member decoder =
-      let decodeEvalAllProps =
+      let decodeEager =
           Decode.string
             |> Decode.andThen
             (function
-              | "EvalAllProps" -> Decode.succeed EvalAllProps
-              | _ -> failwith "Cannot decode PropsToEval")
+              | "Eager" -> Decode.succeed Eager
+              | a -> failwith $"Cannot decode PropsToEval from given input: {a}")
 
-      let decodeOnlyEvalProps =
-          Decode.field "OnlyEvalProps" (Decode.array Decode.string) |> Decode.map OnlyEvalProps
+      let decodeLazy =
+          Decode.string
+            |> Decode.andThen
+            (function
+              | "Lazy" -> Decode.succeed Lazy
+              | a -> failwith $"Cannot decode PropsToEval from given input: {a}")
+      
+      let decodeEagerOnly =
+          Decode.field "EagerOnly" (Decode.array Decode.string) |> Decode.map EagerOnly
 
       // Now that we know how to handle each case, we say that
       // at least of the decoder should succeed to be a valid `Query` representation
-      Decode.oneOf [ decodeEvalAllProps ; decodeOnlyEvalProps ]
+      Decode.oneOf [ decodeEager; decodeLazy ; decodeEagerOnly ]
 
 
   type Method =
