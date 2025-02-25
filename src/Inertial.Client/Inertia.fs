@@ -12,6 +12,10 @@ module Inertia =
     response.responseHeaders
     |> Map.tryFind "x-inertial-location"
   
+  let isReload response =
+    response.responseHeaders
+    |> Map.tryFind "x-inertial-reload"
+  
   let addInertiaHeaders
     cookie
     propsToGet

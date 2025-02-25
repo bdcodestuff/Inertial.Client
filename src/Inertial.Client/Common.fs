@@ -51,7 +51,7 @@ module Core =
 
       // Now that we know how to handle each case, we say that
       // at least of the decoder should succeed to be a valid `Query` representation
-      Decode.oneOf [ decodeEager; decodeLazy ; decodeEagerOnly ]
+      Decode.oneOf [ decodeEager; decodeLazy; decodeEagerOnly ]
 
 
   type Method =

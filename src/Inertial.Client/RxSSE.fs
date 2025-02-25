@@ -45,6 +45,7 @@ module RxSSE =
     // check if the inbound sse event matches the predicate
     let eventPredicates (router:Store<RouterLocation<'Props,'Shared>>) signedInUserId event =
       match event, router.Value.pageObj  with
+        | Ok ev, Some _ when ev.id = System.Guid.Empty -> false // ignore the initial SSE message
         | Ok ev, Some p ->
           printfn $"event: {ev}"
 
