@@ -281,6 +281,28 @@ module Router =
   /// Triggers client-side DELETE request
   let delete pathStore propsDecoder sharedDecoder url propsToGet progress = doNav Delete pathStore url propsToGet (fun name -> propsDecoder name |> Decode.map Some) (sharedDecoder |> Decode.map Some) progress false |> navigateTo
 
+  /// Client facing
+  let inline Link<'Props ,'Shared when 'Props: (static member decoder: string -> Decoder<'Props>) and 'Shared: (static member decoder: Decoder<'Shared>)>
+    defaultApply
+    router
+    : Method -> string -> PropsToEval -> ScrollPosition -> ProgressBar -> SutilElement seq -> SutilElement =
+      link defaultApply 'Props.decoder 'Shared.decoder router 
+
+  let inline Reload<'Props ,'Shared when 'Props: (static member decoder: string -> Decoder<'Props>) and 'Shared: (static member decoder: Decoder<'Shared>)>
+    router = reload 'Props.decoder 'Shared.decoder router 
+
+  let inline Post<'Props ,'Shared when 'Props: (static member decoder: string -> Decoder<'Props>) and 'Shared: (static member decoder: Decoder<'Shared>)>
+    router = post router 'Props.decoder 'Shared.decoder
+    
+  let inline Put<'Props ,'Shared when 'Props: (static member decoder: string -> Decoder<'Props>) and 'Shared: (static member decoder: Decoder<'Shared>)>
+    router = put router 'Props.decoder 'Shared.decoder
+    
+  let inline Patch<'Props ,'Shared when 'Props: (static member decoder: string -> Decoder<'Props>) and 'Shared: (static member decoder: Decoder<'Shared>)>
+    router = patch router 'Props.decoder 'Shared.decoder
+    
+  let inline Delete<'Props ,'Shared when 'Props: (static member decoder: string -> Decoder<'Props>) and 'Shared: (static member decoder: Decoder<'Shared>)>
+    router = delete router 'Props.decoder 'Shared.decoder
+  
   /// Instantiate a router using Sutil store to trigger reactive responses on any change
   let createRouterStore<'Props,'Shared>() =
     Store.make(
@@ -302,21 +324,22 @@ module Router =
     | Error e ->
       printfn $"{e}"
       None
-
-  let renderRouter<'Props,'Shared>
+  
+  let inline renderRouter<'Props ,'Shared when 'Props: (static member decoder: string -> Decoder<'Props>) and 'Shared: (static member decoder: Decoder<'Shared>) and 'Shared: (static member currentUserId: 'Shared option -> string option)>
     (router: Store<RouterLocation<'Props,'Shared>>)
-    //(sharedUserPredicateCheck: 'Shared option -> string array -> bool)
-    (signedInUserId: 'Shared option -> string option)
     (urlToComponent:
       string list -> // url parts
         'Props -> // Page props
           'Shared ->
             Option<SutilElement -> 'Props -> 'Shared -> SutilElement> -> // optional layout function
               SutilElement)
-    (propsDecoder: string -> Decoder<'Props>)
-    (sharedDecoder: Decoder<'Shared>)
     (layout: Option<SutilElement -> 'Props -> 'Shared -> SutilElement>)
     (sseEndpointUrl : string option) =
+      
+      let propsDecoder = 'Props.decoder
+      let sharedDecoder = 'Shared.decoder
+      let signedInUserId = 'Shared.currentUserId
+      
       // configure the progress bar library
       NProgress.configure {| showSpinner = false |}
       
