@@ -4,7 +4,7 @@
     <TargetFramework>netstandard2.0</TargetFramework>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageId>Inertial.Client</PackageId>
-    <Version>0.1.1</Version>
+    <Version>0.1.2</Version>
     <Authors>Bryan Macrie</Authors>
     <RepositoryUrl>https://github.com/bdcodestuff/Inertial.Client</RepositoryUrl>
   </PropertyGroup>
@@ -38,7 +38,7 @@
     <PackageReference Include="Fable.Promise" Version="3.2.0" />
     <PackageReference Include="Fable.Reaction" Version="3.5.0" />
     <PackageReference Include="Fable.SimpleHttp" Version="3.6.0" />
-    <PackageReference Include="Inertial.Lib" Version="0.1.0" />
+    <PackageReference Include="Inertial.Lib" Version="0.1.1" />
     <PackageReference Include="Sutil" Version="2.0.16" />
     <PackageReference Update="FSharp.Core" Version="9.0.101" />
     <PackageReference Include="Thoth.Json" Version="10.4.1" />
@@ -48,5 +48,6 @@
   <ItemGroup>
     <Content Include="*.fsproj; **\*.fs; **\*.fsi" PackagePath="fable\" />
   </ItemGroup>
+
 
 </Project>
