@@ -4,5 +4,8 @@ open Browser
 open Core
 
 module Scroll =
-    let save (url:string) (scrollY: float) = sessionStorage.setItem($"scrollPosition_{url}",string scrollY)
-    let restore (url:string) = sessionStorage.getItem($"scrollPosition_{url}") |> float
+    let save (componentName:string) (scrollY: float) = sessionStorage.setItem($"scrollPosition:{componentName}",string scrollY)
+    let restore (componentName:string) =
+        match sessionStorage.getItem($"scrollPosition:{componentName}") with
+        | null | "" -> 0.
+        | a -> a |> float

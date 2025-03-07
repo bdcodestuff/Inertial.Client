@@ -8,6 +8,7 @@ open FSharp.Control
 open Sutil
 open Thoth.Json
 open Core
+open Inertial.Lib.Types
 
 module RxSSE =
     // extend the ofEvent function to handle generation of SSE events from eventsource
@@ -68,9 +69,10 @@ module RxSSE =
 
           let notEmptyAndNotSameUser =
             match ev.connectionId with
-            | Some evId ->
-              evId <> "" && p.connectionId <> evId
             | None -> false
+            | Some evId ->
+              evId <> "" && p.connectionId <> Some evId
+            
 
           shouldReload && notEmptyAndNotSameUser
         | Error e, _ -> failwith $"{e}"
@@ -79,9 +81,7 @@ module RxSSE =
     // reload function to fire if an incoming SSE value satisfies the predicate
     let ssePartialReload
       (reloadFn:
-        (string -> string -> JsonValue -> Result<'Props,DecoderError>) -> Decoder<'Shared> -> Store<RouterLocation<'Props,'Shared>> -> PropsToEval -> ProgressBar -> bool -> unit)
-      (propsDecoder: string -> Decoder<'Props>)
-      (sharedDecoder: Decoder<'Shared>)
+        Store<RouterLocation<'Props,'Shared>> -> PropsToEval -> ProgressBar -> CacheStorage -> CacheRetrieval -> bool -> unit)
       (router:Store<RouterLocation<'Props,'Shared>>)
       progressBar
       (notification:Notification<Result<InertialSSEEvent,string>>) =
@@ -90,7 +90,7 @@ module RxSSE =
           | OnNext n ->
             match n with
             | Ok ev ->
-              return reloadFn propsDecoder sharedDecoder router ev.predicates.propsToEval progressBar true
+              return reloadFn router ev.predicates.propsToEval progressBar ev.cacheStorage ev.cacheRetrieval true 
             | Error err -> return printfn $"{err}"
           | OnError exn -> return printfn $"{exn.Message}"
           | OnCompleted -> return ()
