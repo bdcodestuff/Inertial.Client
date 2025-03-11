@@ -13,7 +13,7 @@ open Fable.Core
 open Thoth.Json
 open Inertia
 open Core
-open Inertial.Lib.Types
+open Inertial.Lib
 
 [<RequireQualifiedAccess>]
 module Router =
