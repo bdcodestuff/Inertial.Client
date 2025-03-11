@@ -1,6 +1,5 @@
 namespace Inertial.Client
 
-open Thoth.Json
 open Fable.SimpleHttp
 open System
 open System.Threading

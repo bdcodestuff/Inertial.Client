@@ -1,6 +1,7 @@
 namespace Inertial.Client
 
 open System
+open System.Text.RegularExpressions
 open Fable.SimpleHttp
 open Inertial.Client.Core
 open Microsoft.FSharp.Control
@@ -99,14 +100,15 @@ module Inertia =
       withVersion
 
   let getCacheForComponent (componentName:string option) (allFieldNames:string array) =
-    //printfn $"comp: {componentName}, allFields: {allFieldNames}"
+    //printfn $"Debug -- comp: {componentName}, allFields: {allFieldNames}"
     match componentName with
     | Some currentComponentName -> 
       allFieldNames
       |> Array.map (fun item ->
         let stored = sessionStorage.getItem $"cache:{currentComponentName}:{item}"
         if stored <> null && stored <> "" then
-          let decoded = Decode.fromString cacheResultDecoder stored
+          //let decoded = Decode.fromString cacheResultDecoder stored
+          let decoded = Decode.fromString asyncDataDecoder stored
           match decoded with
           | Ok d -> Some (item, box d)
           | Error e ->
@@ -202,19 +204,21 @@ module Inertia =
         | CheckForCached toGet ->
           let nextProps, shouldReload, shouldWrite = resolveNextPropsToEval isReloadAfterMount cacheMap toGet propsToEval fieldNames
           nextProps, Some shouldReload, cacheMap, shouldWrite
-        
+        | CheckForAll ->
+          let nextProps, shouldReload, shouldWrite = resolveNextPropsToEval isReloadAfterMount cacheMap fieldNames propsToEval fieldNames
+          nextProps, Some shouldReload, cacheMap, shouldWrite
         | SkipCache ->
           propsToEval, None, Map.empty, isReloadAfterMount
 
       
-      //printfn $"isReloadAfterMount: {isReloadAfterMount}, propsToEvalIn: {propsToEval}, out: {propsToGet}, cacheMap:{cacheMap}, shouldReload: {shouldReload}, shouldWriteCache: {shouldWriteCache}, store: {cacheStorage}, retrieve: {cacheRetrieval}"
+      //printfn $"Debug -- isReloadAfterMount: {isReloadAfterMount}, propsToEvalIn: {propsToEval}, out: {propsToGet}, cacheMap:{cacheMap}, shouldReload: {shouldReload}, shouldWriteCache: {shouldWriteCache}, store: {cacheStorage}, retrieve: {cacheRetrieval}"
 
       async {
           let! response =
             Http.request url
             |> Http.method (httpVerb.ToMethodHttp())
             |> addData
-            |> addInertiaHeaders cookie propsToGet currentComponentName currentId isSSETriggeredResponse isReloadAfterMount (Some cacheStorage) (Some cacheRetrieval) version
+            |> addInertiaHeaders cookie propsToGet (defaultArg requestedComponentName currentComponentName) currentId isSSETriggeredResponse isReloadAfterMount (Some cacheStorage) (Some cacheRetrieval) version
             |> Http.send
           
           let forceRefreshUrl = forceRefreshUrl response
@@ -253,7 +257,15 @@ module Inertia =
                 let cacheToStore = toMap (Some fieldNames, props)
                 //printfn $"cache: {cacheToStore}"
                 cacheToStore 
-                  |> Array.iter (fun (k,v) -> sessionStorage.setItem($"cache:{resolvedPageObj.``component``}:{k}", Encode.Auto.toString v ) )
+                  |> Array.iter (fun (k,v) ->
+                    let stringEncoded = Encode.Auto.toString v
+                    let stripped = Regex.Replace(stringEncoded, "[@\[\]]", "")
+                    let parts = stripped.Split(',')
+                    let isError = parts |> Array.contains "\"Error\""
+                    if not isError then
+                      sessionStorage.setItem($"cache:{resolvedPageObj.``component``}:{k}", stringEncoded )
+                    else
+                      printfn $"skipping cache storage of async function \"{k}\" due to error in return value")
               | Some props, StoreToCache toSave when shouldWriteCache -> 
                 //printfn $"resolved: {props}"
                 //if shouldWriteToCache then printfn $"saving to cache: {toSave}"

@@ -534,10 +534,12 @@ module Router =
               // location.allowPartialReload is a boolean flag that flips in response to whether the incoming request is itself a partial or full page request
               // it prevents infinite reload loops
               // the obj.reloadOnMount.shouldReload is a boolean flag set on the server side that specifies if the component is intended to reload on mount or not
+              
+              //printfn $"allowed: {location.allowPartialReload}, should: {obj.reloadOnMount.shouldReload}"
               if location.allowPartialReload && obj.reloadOnMount.shouldReload then
-                match obj.reloadOnMount.propsToEval, obj.reloadOnMount.cacheStorage, obj.reloadOnMount.cacheRetrieval with
-                | Some withProps, Some cacheStorage, Some cacheRetrieval ->
-                  reload router withProps HideProgressBar cacheStorage cacheRetrieval false 
+                match obj.reloadOnMount.propsToEval with
+                | Some withProps->
+                  reload router withProps HideProgressBar obj.reloadOnMount.cacheStorage obj.reloadOnMount.cacheRetrieval false 
                 | _ -> ()
               
             | None -> ()
