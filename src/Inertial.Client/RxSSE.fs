@@ -6,9 +6,8 @@ open Inertial.Client.Core
 open Microsoft.FSharp.Control
 open FSharp.Control
 open Sutil
-open Thoth.Json
 open Core
-open Inertial.Lib.Types
+open Inertial.Lib
 
 module RxSSE =
     // extend the ofEvent function to handle generation of SSE events from eventsource
@@ -30,7 +29,7 @@ module RxSSE =
                   eventSource.addEventListener_message(
                       fun msg ->
                         let json = msg.data :?> string
-                        let event = Decode.fromString InertialSSEEvent.decoder json
+                        let event = Helpers.decodeSSEFromString json
                         unbox mb.Post event
                     )
 

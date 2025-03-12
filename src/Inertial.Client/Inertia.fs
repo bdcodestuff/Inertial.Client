@@ -5,7 +5,6 @@ open System.Text.RegularExpressions
 open Fable.SimpleHttp
 open Inertial.Client.Core
 open Microsoft.FSharp.Control
-open Thoth.Json
 open Core
 open Browser
 open Inertial.Lib.Types
@@ -108,7 +107,7 @@ module Inertia =
         let stored = sessionStorage.getItem $"cache:{currentComponentName}:{item}"
         if stored <> null && stored <> "" then
           //let decoded = Decode.fromString cacheResultDecoder stored
-          let decoded = Decode.fromString asyncDataDecoder stored
+          let decoded = decodeCacheFromString stored
           match decoded with
           | Ok d -> Some (item, box d)
           | Error e ->
@@ -194,7 +193,8 @@ module Inertia =
       let includeData = not dataMap.IsEmpty && httpVerb <> Delete
       let addData (input:HttpRequest) =
         if includeData then
-          input |> Http.content (BodyContent.Text <| Encode.Auto.toString(4,dataMap))
+          input
+          |> Http.content (encodeBodyContent dataMap |> BodyContent.Text)
         else
           input       
 
@@ -258,7 +258,7 @@ module Inertia =
                 //printfn $"cache: {cacheToStore}"
                 cacheToStore 
                   |> Array.iter (fun (k,v) ->
-                    let stringEncoded = Encode.Auto.toString v
+                    let stringEncoded = encodeCacheObj v
                     let stripped = Regex.Replace(stringEncoded, "[@\[\]]", "")
                     let parts = stripped.Split(',')
                     let isError = parts |> Array.contains "\"Error\""
@@ -277,7 +277,8 @@ module Inertia =
                   let cacheToStore = toMap (Some intersectArr, props)
                   //printfn $"cache: {cacheToStore}"
                   cacheToStore 
-                    |> Array.iter (fun (k,v) -> sessionStorage.setItem($"cache:{resolvedPageObj.``component``}:{k}", Encode.Auto.toString v ) )
+                    |> Array.iter (fun (k,v) ->
+                      sessionStorage.setItem($"cache:{resolvedPageObj.``component``}:{k}", encodeCacheObj v ) )
 
               | _ -> ()
               

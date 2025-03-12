@@ -10,10 +10,10 @@ open Sutil.Core
 open Sutil.CoreElements
 open Browser
 open Fable.Core
-open Thoth.Json
 open Inertia
 open Core
 open Inertial.Lib
+open Thoth.Json
 
 [<RequireQualifiedAccess>]
 module Router =
@@ -24,8 +24,8 @@ module Router =
       url:string
       propsToEval:PropsToEval
       isForwardBack:bool
-      propsDecoder: string -> string -> JsonValue -> Result<'Props option,DecoderError>
-      sharedDecoder: string -> JsonValue -> Result<'Shared option,DecoderError>
+      propsDecoder: string -> Decoder<'Props option>
+      sharedDecoder: Decoder<'Shared option>
       doFullReloadOnArrival:bool
       progress:ProgressBar
       scroll:ScrollPosition
@@ -61,8 +61,8 @@ module Router =
 
     // create a new navigation data record
     // this is used to pass data to the navigateTo function
-        let propsDecoderOpt = fun name -> 'Props.decoder name |> Decode.map Some
-        let sharedDecoderOpt = 'Shared.decoder |> Decode.map Some
+        let propsDecoderOpt = fun name -> Helpers.mapDecoderToOpt ('Props.decoder name)
+        let sharedDecoderOpt = Helpers.mapDecoderToOpt 'Shared.decoder
         {
           pathStore = pathStore
           method = method
@@ -397,8 +397,9 @@ module Router =
     and 'Shared: (static member decoder: Decoder<'Shared>) 
     and 'Shared: (static member currentUserId: 'Shared option -> string option)> () =
     
-    let propsDecoderOpt = fun name -> 'Props.decoder name |> Decode.map Some
-    let sharedDecoderOpt = 'Shared.decoder |> Decode.map Some
+    let propsDecoderOpt = fun name -> Helpers.mapDecoderToOpt ('Props.decoder name)
+    let sharedDecoderOpt = Helpers.mapDecoderToOpt 'Shared.decoder
+    
     match PageObj.fromJson (initialPageObjAttr ()) propsDecoderOpt sharedDecoderOpt with
     | Ok p ->       
       Some p
@@ -429,10 +430,8 @@ module Router =
       // let sharedDecoder = 'Shared.decoder
       let signedInUserId = 'Shared.currentUserId
       
-      
       // configure the progress bar library
       NProgress.configure {| showSpinner = false |}
-      
       
       // get initial pageObj
       let initial = initialPageObj()
@@ -500,7 +499,6 @@ module Router =
             else
                 false
         | None -> false
-               
       
       // add event listener to navigate on back/forward
       window.addEventListener("popstate", fun _ ->
@@ -527,9 +525,7 @@ module Router =
             match location.pageObj with
             | Some obj ->
               document.title <- obj.title // set page title here
-              
-              
-              
+
               // handle reload on first mount here
               // location.allowPartialReload is a boolean flag that flips in response to whether the incoming request is itself a partial or full page request
               // it prevents infinite reload loops
