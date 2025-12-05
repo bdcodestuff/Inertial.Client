@@ -13,38 +13,85 @@ open Fable.Core
 open Inertia
 open Core
 open Inertial.Lib
+open Inertial.Lib.Types
 open Thoth.Json
 
 [<RequireQualifiedAccess>]
 module Router =
+
+  /// Configuration record that holds all the functions needed by the router.
+  /// This replaces the need for static members on Props and Shared types.
+  type RouterConfig<'Props, 'Shared> =
+    {
+      /// Decoder function that takes a component name and returns a decoder for Props
+      propsDecoder: string -> Decoder<'Props>
+      /// Decoder for Shared data
+      sharedDecoder: Decoder<'Shared>
+      /// Extract field values from a Props value for caching
+      toMap: option<string array> * 'Props -> array<string * obj>
+      /// Get all Deferred/async field names from a Props value
+      toFields: 'Props -> string array
+      /// Resolve cached values into a Props value
+      resolver: Map<string, obj> * 'Props -> 'Props
+      /// Get the current user ID from Shared data (for SSE filtering)
+      currentUserId: 'Shared option -> string option
+    }
+
+  /// Create a RouterConfig with automatic DU-aware implementations for toMap, toFields, and resolver
+  /// IMPORTANT: The inline functions must be passed as lambdas at the call site to preserve Fable type info
+  let inline createConfig
+    (propsDecoder: string -> Decoder<'Props>)
+    (sharedDecoder: Decoder<'Shared>)
+    (currentUserId: 'Shared option -> string option)
+    : RouterConfig<'Props, 'Shared> =
+    {
+      propsDecoder = propsDecoder
+      sharedDecoder = sharedDecoder
+      toMap = fun (filterTo, props) -> FableReflection.extractFieldsFromDU filterTo props
+      toFields = fun props -> FableReflection.findDeferredFieldsFromDU props
+      resolver = fun (cache, props) -> FableReflection.resolveFieldsInDU cache props
+      currentUserId = currentUserId
+    }
+
+  /// Create a RouterConfig from a decoder map - the simplest API
+  /// Usage: createConfigFromMap decoderMap sharedDecoder currentUserId
+  let inline createConfigFromMap
+    (decoderMap: Map<string, Decoder<'Props>>)
+    (sharedDecoder: Decoder<'Shared>)
+    (currentUserId: 'Shared option -> string option)
+    : RouterConfig<'Props, 'Shared> =
+    createConfig (FableReflection.createPropsDecoder decoderMap) sharedDecoder currentUserId
+
+  /// Create a RouterConfig from a decoder map without Shared data.
+  /// Use this when you don't need shared data across pages.
+  /// Usage: createConfigWithoutShared decoderMap
+  let inline createConfigWithoutShared
+    (decoderMap: Map<string, Decoder<'Props>>)
+    : RouterConfig<'Props, EmptyShared> =
+    createConfig
+      (FableReflection.createPropsDecoder decoderMap)
+      EmptyShared.decoder
+      EmptyShared.currentUserId
+
   type NavigationData<'Props,'Shared> =
     {
       pathStore:Store<RouterLocation<'Props,'Shared>>
+      config: RouterConfig<'Props,'Shared>
       method:Method
       url:string
       propsToEval:PropsToEval
       isForwardBack:bool
-      propsDecoder: string -> Decoder<'Props option>
-      sharedDecoder: Decoder<'Shared option>
       doFullReloadOnArrival:bool
       progress:ProgressBar
       scroll:ScrollPosition
       isPartialReload:bool
       isSSEResponse:bool
-      toMap: option<string array> * 'Props -> array<string * obj>
-      toFields: string -> string array
-      resolver: Map<string,obj> * 'Props -> 'Props
       cacheStorage: CacheStorage
       cacheRetrieval: CacheRetrieval
     }
 
-  let inline createNavigation<'Props,'Shared 
-    when 'Props: (static member decoder: string -> Decoder<'Props>) 
-    and 'Props: (static member toMap: (array<string> option * 'Props) -> array<string*obj>)
-    and 'Props: (static member toFields: string -> string array)
-    and 'Props: (static member resolver: (Map<string,obj>  * 'Props) -> 'Props) 
-    and 'Shared: (static member decoder: Decoder<'Shared>) 
-    and 'Shared: (static member currentUserId: 'Shared option -> string option)>
+  let createNavigation
+      (config: RouterConfig<'Props,'Shared>)
       (pathStore:Store<RouterLocation<'Props,'Shared>>)
       (method:Method)
       url
@@ -58,28 +105,18 @@ module Router =
       cacheRetrieval
       (isSSEResponse:bool)
        =
-
-    // create a new navigation data record
-    // this is used to pass data to the navigateTo function
-        let propsDecoderOpt = fun name -> Helpers.mapDecoderToOpt ('Props.decoder name)
-        let sharedDecoderOpt = Helpers.mapDecoderToOpt 'Shared.decoder
         {
           pathStore = pathStore
+          config = config
           method = method
           url = url
           propsToEval = propsToEval
           isForwardBack = isForwardBack
-          propsDecoder = propsDecoderOpt
-          sharedDecoder = sharedDecoderOpt
           doFullReloadOnArrival = doFullReloadOnArrival
           progress = progress
           scroll = scroll
           isPartialReload = isPartialReload
           isSSEResponse = isSSEResponse
-          //cacheMap = cacheMap
-          toMap = 'Props.toMap
-          toFields = 'Props.toFields 
-          resolver = 'Props.resolver
           cacheStorage = cacheStorage
           cacheRetrieval = cacheRetrieval
         }
@@ -93,8 +130,6 @@ module Router =
       splitRoute route @ [ router.query.TrimStart('?') ]
     else
       splitRoute route
-
-  //when 'Props: (static member decoder: string -> Decoder<'Props>) and 'Props: (static member toMap: option<string array> * 'Props -> Map<string,obj>) and 'Props: (static member resolver: Map<string,obj> * 'Props -> 'Props) and 'Shared: (static member decoder: Decoder<'Shared>)
 
   /// triggers a partial page load and reads JSON server response
   let navigateTo (n:NavigationData<'Props,'Shared>) =
@@ -116,7 +151,7 @@ module Router =
               |> Array.tryFind (fun (path, _) -> path = n.url)
               |> Option.map snd
             | None -> None
-            
+
           // connection id
           let currentId =
               match n.pathStore.Value.pageObj with
@@ -127,7 +162,11 @@ module Router =
               match n.pathStore.Value.pageObj with
               | Some o -> o.version
               | None -> ""
-          
+
+          // Create decoder functions from config
+          let propsDecoderOpt = fun name -> Helpers.mapDecoderToOpt (n.config.propsDecoder name)
+          let sharedDecoderOpt = Helpers.mapDecoderToOpt n.config.sharedDecoder
+
           let pageObjAsync =
             inertiaHttp
                 n.url
@@ -140,14 +179,13 @@ module Router =
                 n.isSSEResponse
                 n.isPartialReload
                 version
-                n.propsDecoder
-                n.sharedDecoder
-                n.toFields
-                //n.cacheMap
-                n.toMap
-                n.resolver
+                propsDecoderOpt
+                sharedDecoderOpt
+                n.config.toFields
+                n.config.toMap
+                n.config.resolver
                 requestedComponentName
-                
+
           // asynchronously converts inbound JSON to domain PageObj record type
           let! forceRefreshUrl, pageObj =
             Async.StartAsPromise(pageObjAsync,n.pathStore.Value.cancellationTokenSource.Token)
@@ -156,8 +194,8 @@ module Router =
           | Some url ->
             // if force refresh requested trigger it here
             window.location.href <- url
-          | None -> 
-          
+          | None ->
+
             // inertia can pass in an optional url; if present it should override the browser url
             let inertiaUrl =
               match pageObj with
@@ -181,7 +219,7 @@ module Router =
 
                 // save scroll location of outgoing page on each router location change to enable restoring it later if requested
                 match pageObj with
-                | Some p -> 
+                | Some p ->
                   Scroll.save p.``component`` window.pageYOffset
                 | None -> ()
 
@@ -210,7 +248,7 @@ module Router =
               // restore y-scroll position is it's stored in session storage
               match n.scroll with
               | ResetScroll -> ()
-              | KeepVerticalScroll url -> window.scroll(0,Scroll.restore url) 
+              | KeepVerticalScroll url -> window.scroll(0,Scroll.restore url)
           )
         .catch(
           // catch errors (most commonly this fires because a pending page request was cancelled by the user making a newer, superseding page load request)
@@ -228,56 +266,41 @@ module Router =
             printfn $"{toPrint}")
         |> Promise.start
 
-  let inline doNav<
-    'Props ,'Shared 
-      when 'Props: (static member decoder: string -> Decoder<'Props>) 
-      and 'Props: (static member toMap: (array<string> option * 'Props) -> array<string*obj>)
-      and 'Props: (static member toFields: string -> string array )
-      and 'Props: (static member resolver: (Map<string,obj>  * 'Props) -> 'Props) 
-      and 'Shared: (static member decoder: Decoder<'Shared>) 
-      and 'Shared: (static member currentUserId: 'Shared option -> string option)
-  > method =
-    fun
-      (pathStore: Store<RouterLocation<'Props,'Shared>>)
-      url
-      propsToGet
-      progress
-      cacheStorage
-      cacheRetrieval
-       -> createNavigation
-            pathStore
-            method
-            url
-            propsToGet
-            false
-            false
-            progress
-            ResetScroll
-            false
-            cacheStorage
-            cacheRetrieval
-  
-  /// Triggers page to reload itself -- server side client interprets this as a partial data request and will send evaluate and send back any asynchronous page props that match in PropsToEval 
-  
-  
-  
-  let inline reload<
-    'Props ,'Shared 
-      when 'Props: (static member decoder: string -> Decoder<'Props>) 
-      and 'Props: (static member toMap: (array<string> option * 'Props) -> array<string*obj>)
-      and 'Props: (static member toFields: string -> string array )
-      and 'Props: (static member resolver: (Map<string,obj>  * 'Props) -> 'Props) 
-      and 'Shared: (static member decoder: Decoder<'Shared>) 
-      and 'Shared: (static member currentUserId: 'Shared option -> string option)
-  >
+  let doNav
+    (config: RouterConfig<'Props,'Shared>)
+    method
+    (pathStore: Store<RouterLocation<'Props,'Shared>>)
+    url
+    propsToGet
+    progress
+    cacheStorage
+    cacheRetrieval
+     = createNavigation
+          config
+          pathStore
+          method
+          url
+          propsToGet
+          false
+          false
+          progress
+          ResetScroll
+          false
+          cacheStorage
+          cacheRetrieval
+
+  /// Triggers page to reload itself -- server side client interprets this as a partial data request and will send evaluate and send back any asynchronous page props that match in PropsToEval
+  let reload
+    (config: RouterConfig<'Props,'Shared>)
     (pathStore:Store<RouterLocation<'Props,'Shared>>)
     propsToEval
     progress
     cacheStorage
     cacheRetrieval
-    isSSEResponse 
+    isSSEResponse
      =
       createNavigation
+        config
         pathStore
         (Get [])
         $"{window.location.pathname}{window.location.search}"
@@ -290,20 +313,13 @@ module Router =
         cacheStorage
         cacheRetrieval
         isSSEResponse
-        
+
       |> navigateTo
-      
+
 
   /// Triggers loading of a new page client-side
-  let inline link<
-    'Props ,'Shared 
-      when 'Props: (static member decoder: string -> Decoder<'Props>) 
-      and 'Props: (static member toMap: (array<string> option * 'Props) -> array<string*obj>)
-      and 'Props: (static member toFields: string -> string array)
-      and 'Props: (static member resolver: (Map<string,obj>  * 'Props) -> 'Props) 
-      and 'Shared: (static member decoder: Decoder<'Shared>) 
-      and 'Shared: (static member currentUserId: 'Shared option -> string option)
-  >
+  let link
+    (config: RouterConfig<'Props,'Shared>)
     (defaultApply: seq<SutilElement>) // these are default Sutil elements to include in every link
     (pathStore: Store<RouterLocation<'Props,'Shared>>)
     (method: Method)
@@ -321,6 +337,7 @@ module Router =
                               EngineHelpers.Attr.href href
                               onClick (fun e -> e.preventDefault()
                                                 createNavigation
+                                                  config
                                                   pathStore
                                                   method
                                                   href
@@ -335,45 +352,50 @@ module Router =
                                                   false
                                                 |> navigateTo
                             ) []])
-  
 
-  
+
+
   /// Triggers client-side POST request
-  let inline post pathStore url data propsToGet progress cacheStorage cacheRetrieval =
-    doNav (Post data) pathStore url propsToGet progress cacheStorage cacheRetrieval false |> navigateTo
-  
-  /// Triggers client-side PUT request
-  let inline put pathStore url data propsToGet progress cacheStorage cacheRetrieval = doNav (Put data) pathStore url propsToGet progress cacheStorage cacheRetrieval false |> navigateTo
-  
-  /// Triggers client-side PATCH request
-  let inline patch pathStore url data propsToGet progress cacheStorage cacheRetrieval = doNav (Patch data) pathStore url propsToGet progress cacheStorage cacheRetrieval false |> navigateTo
-  
-  /// Triggers client-side DELETE request
-  let inline delete pathStore url propsToGet progress cacheStorage cacheRetrieval = doNav Delete pathStore url propsToGet progress cacheStorage cacheRetrieval false |> navigateTo
+  let post config pathStore url data propsToGet progress cacheStorage cacheRetrieval =
+    doNav config (Post data) pathStore url propsToGet progress cacheStorage cacheRetrieval false |> navigateTo
 
-  /// Client facing
-  let inline Link
+  /// Triggers client-side PUT request
+  let put config pathStore url data propsToGet progress cacheStorage cacheRetrieval =
+    doNav config (Put data) pathStore url propsToGet progress cacheStorage cacheRetrieval false |> navigateTo
+
+  /// Triggers client-side PATCH request
+  let patch config pathStore url data propsToGet progress cacheStorage cacheRetrieval =
+    doNav config (Patch data) pathStore url propsToGet progress cacheStorage cacheRetrieval false |> navigateTo
+
+  /// Triggers client-side DELETE request
+  let delete config pathStore url propsToGet progress cacheStorage cacheRetrieval =
+    doNav config Delete pathStore url propsToGet progress cacheStorage cacheRetrieval false |> navigateTo
+
+  /// Client facing - creates a partially applied Link function with config and router bound
+  let Link
+    (config: RouterConfig<'Props,'Shared>)
     defaultApply
     router
     : Method -> string -> PropsToEval -> ScrollPosition -> ProgressBar -> CacheStorage -> CacheRetrieval -> SutilElement seq -> SutilElement =
-      link defaultApply router
+      link config defaultApply router
 
-  let inline Reload
-    router = reload router 
+  /// Client facing - creates a partially applied Reload function with config and router bound
+  let Reload
+    (config: RouterConfig<'Props,'Shared>)
+    router = reload config router
 
-  let inline Post
+  /// Client facing - creates a partially applied Post function with config and router bound
+  let Post
+    (config: RouterConfig<'Props,'Shared>)
     router
     : string -> List<string * obj> -> PropsToEval -> ProgressBar -> CacheStorage -> CacheRetrieval -> unit
-    = post router
-    
-  let inline Put
-    router = put router
-    
-  let inline Patch
-    router = patch router
-    
-  let inline Delete
-    router = delete router
+    = post config router
+
+  let Put config router = put config router
+
+  let Patch config router = patch config router
+
+  let Delete config router = delete config router
   
   /// Instantiate a router using Sutil store to trigger reactive responses on any change
   let createRouterStore<'Props,'Shared>() =
@@ -388,34 +410,21 @@ module Router =
 
   // If a full page reload occurs the PageObj must be extracted from the body data-page attribute
   let initialPageObjAttr () = document.getElementById("sutil-app").getAttribute("data-page")
+
   // Parse PageObj json string using Props and Shared Thoth decoders
-  let inline initialPageObj<'Props,'Shared 
-    when 'Props: (static member decoder: string -> Decoder<'Props>)
-    and 'Props: (static member toMap: (array<string> option * 'Props) -> array<string*obj>)
-    and 'Props: (static member toFields: string -> string array)
-    and 'Props: (static member resolver: (Map<string,obj>  * 'Props) -> 'Props) 
-    and 'Shared: (static member decoder: Decoder<'Shared>) 
-    and 'Shared: (static member currentUserId: 'Shared option -> string option)> () =
-    
-    let propsDecoderOpt = fun name -> Helpers.mapDecoderToOpt ('Props.decoder name)
-    let sharedDecoderOpt = Helpers.mapDecoderToOpt 'Shared.decoder
-    
+  let initialPageObj (config: RouterConfig<'Props,'Shared>) =
+    let propsDecoderOpt = fun name -> Helpers.mapDecoderToOpt (config.propsDecoder name)
+    let sharedDecoderOpt = Helpers.mapDecoderToOpt config.sharedDecoder
+
     match PageObj.fromJson (initialPageObjAttr ()) propsDecoderOpt sharedDecoderOpt with
-    | Ok p ->       
+    | Ok p ->
       Some p
     | Error e ->
       printfn $"{e}"
       None
-  
-  let inline 
-    renderRouter<'Props ,'Shared 
-      when 'Props: (static member decoder: string -> Decoder<'Props>)
-      and 'Props: (static member toMap: (array<string> option * 'Props) -> array<string*obj>)
-      and 'Props: (static member toFields: string -> string array)
-      and 'Props: (static member resolver: (Map<string,obj>  * 'Props) -> 'Props) 
-      and 'Shared: (static member decoder: Decoder<'Shared>) 
-      and 'Shared: (static member currentUserId: 'Shared option -> string option)
-    >
+
+  let renderRouter
+    (config: RouterConfig<'Props,'Shared>)
     (router: Store<RouterLocation<'Props,'Shared>>)
     (urlToComponent:
       string list -> // url parts
@@ -425,16 +434,14 @@ module Router =
               SutilElement)
     (layout: Option<SutilElement -> 'Props -> 'Shared -> SutilElement>)
     (sseEndpointUrl : string option) =
-      
-      // let propsDecoder = 'Props.decoder
-      // let sharedDecoder = 'Shared.decoder
-      let signedInUserId = 'Shared.currentUserId
-      
+
+      let signedInUserId = config.currentUserId
+
       // configure the progress bar library
       NProgress.configure {| showSpinner = false |}
-      
+
       // get initial pageObj
-      let initial = initialPageObj()
+      let initial = initialPageObj config
 
       // inertia passes in an url that we use to override the browser url
       let inertiaUrl =
@@ -457,11 +464,11 @@ module Router =
               query = window.location.search
               pageObj = initial} )
 
-      let shouldListenOnSSE = // reloadOnSSE router.Value.pageObj
+      let shouldListenOnSSE =
         match router.Value.pageObj with
         | Some p' -> p'.realTime
         | None -> true
-            
+
       // determine if this sutil component should listen on the sse endpoint
       if shouldListenOnSSE then
         let url = defaultArg sseEndpointUrl "/sse" // defaults to "/sse" if url not specified
@@ -482,7 +489,7 @@ module Router =
         let main = async {
           // trigger the ssePartialReload for each stream element being subscribed to
           let! _ = observable.SubscribeAsync
-                     (RxSSE.ssePartialReload reload router ShowProgressBar)
+                     (RxSSE.ssePartialReload (reload config) router ShowProgressBar)
           return ()
         }
         // subscribe!
@@ -499,10 +506,11 @@ module Router =
             else
                 false
         | None -> false
-      
+
       // add event listener to navigate on back/forward
       window.addEventListener("popstate", fun _ ->
         createNavigation
+          config
           router
           (Get [])
           $"{window.location.pathname}{window.location.search}"
@@ -530,24 +538,23 @@ module Router =
               // location.allowPartialReload is a boolean flag that flips in response to whether the incoming request is itself a partial or full page request
               // it prevents infinite reload loops
               // the obj.reloadOnMount.shouldReload is a boolean flag set on the server side that specifies if the component is intended to reload on mount or not
-              
-              //printfn $"allowed: {location.allowPartialReload}, should: {obj.reloadOnMount.shouldReload}"
-              if location.allowPartialReload && obj.reloadOnMount.shouldReload then
+
+              if location.allowPartialReload then
                 match obj.reloadOnMount.propsToEval with
-                | Some withProps->
-                  reload router withProps HideProgressBar obj.reloadOnMount.cacheStorage obj.reloadOnMount.cacheRetrieval false 
+                | Lazy a ->
+                  reload config router (EagerOnly a) HideProgressBar obj.reloadOnMount.cacheStorage obj.reloadOnMount.cacheRetrieval false
                 | _ -> ()
-              
+
             | None -> ()
-            
+
             // parse url and find matching handler with layout if appropriate
             match location.pageObj with
             | Some obj ->
               match obj.props, obj.shared with
-              | Some props, Some shared -> urlToComponent (getCurrentUrl location) props shared layout 
+              | Some props, Some shared -> urlToComponent (getCurrentUrl location) props shared layout
               | _ -> text "Error loading page data, please refresh"
             | _ -> text "Error loading page data, please refresh"))
-        
+
         disposeOnUnmount [router] // free resources
       ]
 

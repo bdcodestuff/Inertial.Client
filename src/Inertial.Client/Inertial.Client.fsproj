@@ -28,6 +28,7 @@
     <Compile Include="Inertia.fs" />
     <Compile Include="Scroll.fs" />
     <Compile Include="RxSSE.fs" />
+    <Compile Include="Deferred.fs" />
     <Compile Include="Router.fs" />
   </ItemGroup>
 
@@ -38,7 +39,6 @@
     <PackageReference Include="Fable.Promise" Version="3.2.0" />
     <PackageReference Include="Fable.Reaction" Version="3.5.0" />
     <PackageReference Include="Fable.SimpleHttp" Version="3.6.0" />
-    <PackageReference Include="Inertial.Lib" Version="0.1.3" />
     <PackageReference Include="Sutil" Version="2.0.16" />
     <PackageReference Update="FSharp.Core" Version="9.0.101" />
   </ItemGroup>
@@ -46,6 +46,9 @@
   <!-- Add source files to "fable" folder in Nuget package -->
   <ItemGroup>
     <Content Include="*.fsproj; **\*.fs; **\*.fsi" PackagePath="fable\" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Inertial.Lib\src\Inertial.Lib\Inertial.Lib.fsproj" />
   </ItemGroup>
 
 

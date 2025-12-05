@@ -47,7 +47,7 @@ module RxSSE =
       match event, router.Value.pageObj  with
         | Ok ev, Some _ when ev.id = System.Guid.Empty -> false // ignore the initial SSE message
         | Ok ev, Some p ->
-          printfn $"event: {ev}"
+          //printfn $"Debug -- server sent event: {ev}"
 
           let shouldReload =
               ev.predicates.predicates |> Array.map (fun pred ->
@@ -89,6 +89,7 @@ module RxSSE =
           | OnNext n ->
             match n with
             | Ok ev ->
+              //printfn $"SSE props: {ev.predicates.propsToEval}"
               return reloadFn router ev.predicates.propsToEval progressBar ev.cacheStorage ev.cacheRetrieval true 
             | Error err -> return printfn $"{err}"
           | OnError exn -> return printfn $"{exn.Message}"

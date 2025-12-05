@@ -51,13 +51,16 @@ module Inertia =
         | Eager ->
           withCurrentId
           |> Http.header (Headers.create "X-Inertial-Full-Component" currentComponentName)
-        | Lazy ->
+        | Skip ->
           withCurrentId
-        | EagerOnly props ->
+        | EagerOnly props | Lazy props when props.Length > 0 ->
           let propList = props |> Array.reduce (fun x y -> $"{x}, {y}")
           withCurrentId
           |> Http.header (Headers.create "X-Inertial-Partial-Component" currentComponentName)
-          |> Http.header (Headers.create "X-Inertial-Partial-Data" propList)     
+          |> Http.header (Headers.create "X-Inertial-Partial-Data" propList)
+        | EagerOnly _ | Lazy _ ->
+          // Empty props array - treat like Skip
+          withCurrentId     
 
       // add CSRF token header
       let withCookie =
@@ -124,41 +127,41 @@ module Inertia =
   
   let resolveReEvals (cacheMap: Map<string,obj>) (requestedFromCache:string array) (requestedForReEval:string array) =
     // these are requested from cache and present in cache
-    let foundInCacheOkTOmitFromReEval = requestedFromCache |> Array.filter cacheMap.ContainsKey
+    let foundInCacheOkToOmitFromReEval = requestedFromCache |> Array.filter cacheMap.ContainsKey
     // remove keys from http request
-    requestedForReEval |> Array.except foundInCacheOkTOmitFromReEval
+    requestedForReEval |> Array.except foundInCacheOkToOmitFromReEval
     
   let missingFromCacheMap (cacheMap:Map<string,obj>) (allFieldNames: string array) =
     let cacheMapSet = cacheMap |> Map.toArray |> Array.map fst |> Set.ofArray
     let allFieldsSet = allFieldNames |> Set.ofArray
     Set.difference allFieldsSet cacheMapSet |> Set.toArray
     
-  let resolveNextPropsToEval isReloadOnMount cacheMap toGetFromCache (toReEval:PropsToEval) allFieldNames : PropsToEval * bool * bool=
+  let resolveNextPropsToEval isReloadOnMount cacheMap toGetFromCache (toReEval:PropsToEval) allFieldNames =
     let missingFromCache = missingFromCacheMap cacheMap allFieldNames
-    let toReEvalArr =
+
+    let toReEvalArr, shouldReload =
       match toReEval with
-      | Lazy when missingFromCache |> Array.isEmpty -> [||]
-      | Lazy when missingFromCache = allFieldNames -> allFieldNames
-      | Lazy -> missingFromCache
-      | Eager -> allFieldNames
-      | EagerOnly a -> a
-    
+      | Lazy [||] -> allFieldNames, true // empty Lazy means reload ALL deferred fields
+      | Lazy a -> a, true // skip initial evaluation, but do a reload for specified fields
+      | Skip when missingFromCache |> Array.isEmpty -> [||], false
+      | Skip when missingFromCache = allFieldNames -> allFieldNames, false
+      | Skip -> missingFromCache, false
+      | Eager -> allFieldNames, false
+      | EagerOnly a -> a, false
+      
     let nextReEvals = resolveReEvals cacheMap toGetFromCache toReEvalArr
-    
+    //printfn $"Debug -- next re-evals: {nextReEvals}"
+
     let reEvalAllFields toReEval =
       let toReEvalSet = Set.ofArray toReEval
       let allFieldNameSet = Set.ofArray allFieldNames
       Set.isSubset toReEvalSet allFieldNameSet && Set.isSuperset toReEvalSet allFieldNameSet
-    
-    match nextReEvals with
-    | [||] -> Lazy, false, false
-    | a when reEvalAllFields a -> Eager, false, true
-      // if not isReloadOnMount then
-      //   Eager, true, false
-      // else
-      //   Eager, false, true
-    | a when not isReloadOnMount -> EagerOnly a, true, false
-    | a -> EagerOnly a, false, true
+
+    match nextReEvals, shouldReload with
+    | [||], _ -> Skip, false
+    | a, true -> Lazy a, false // shouldReload=true means original was Lazy, preserve it for client-side reload
+    | a, false when reEvalAllFields a -> Eager, true
+    | a, false -> EagerOnly a, true // any other EagerOnly request we store to cache
   
   let inertiaHttp
     url
@@ -173,115 +176,107 @@ module Inertia =
     version
     propsDecoder
     sharedDecoder
-    (toFieldNames: string -> string array)
-    (toMap: (option<string array> * 'Props) -> array<string*obj>)
+    (toFieldNames: 'Props -> string array)
+    (toMap: option<string array> * 'Props -> array<string*obj>)
     (resolver: Map<string,obj> * 'Props -> 'Props)
     (requestedComponentName:string option)
 
     : Async<String option * PageObj<'Props,'Shared> option> =
       let cookie = JsCookie.get "XSRF-TOKEN"
       let dataMap = httpVerb.ToDataMap()
-      //let fieldNames = toFieldNames requestedComponentName
-      let fieldNames =
-        match requestedComponentName with
-        | Some name -> toFieldNames name
-        | None ->
-          printfn "Could not find component in map"
-          [||]
-      //let cacheMap = getCacheForComponent currentComponentName fieldNames
-      let cacheMap = getCacheForComponent requestedComponentName fieldNames
       let includeData = not dataMap.IsEmpty && httpVerb <> Delete
       let addData (input:HttpRequest) =
         if includeData then
           input
           |> Http.content (encodeBodyContent dataMap |> BodyContent.Text)
         else
-          input       
+          input
 
-      let propsToGet, shouldReload, cacheMap, shouldWriteCache =
-        match cacheRetrieval with
-        // 
-        | CheckForCached toGet ->
-          let nextProps, shouldReload, shouldWrite = resolveNextPropsToEval isReloadAfterMount cacheMap toGet propsToEval fieldNames
-          nextProps, Some shouldReload, cacheMap, shouldWrite
-        | CheckForAll ->
-          let nextProps, shouldReload, shouldWrite = resolveNextPropsToEval isReloadAfterMount cacheMap fieldNames propsToEval fieldNames
-          nextProps, Some shouldReload, cacheMap, shouldWrite
-        | SkipCache ->
-          propsToEval, None, Map.empty, isReloadAfterMount
-
-      
-      //printfn $"Debug -- isReloadAfterMount: {isReloadAfterMount}, propsToEvalIn: {propsToEval}, out: {propsToGet}, cacheMap:{cacheMap}, shouldReload: {shouldReload}, shouldWriteCache: {shouldWriteCache}, store: {cacheStorage}, retrieve: {cacheRetrieval}"
-
+      // Initial request without cache-aware headers (we'll get field names from decoded props)
       async {
           let! response =
             Http.request url
             |> Http.method (httpVerb.ToMethodHttp())
             |> addData
-            |> addInertiaHeaders cookie propsToGet (defaultArg requestedComponentName currentComponentName) currentId isSSETriggeredResponse isReloadAfterMount (Some cacheStorage) (Some cacheRetrieval) version
+            |> addInertiaHeaders cookie propsToEval (defaultArg requestedComponentName currentComponentName) currentId isSSETriggeredResponse isReloadAfterMount (Some cacheStorage) (Some cacheRetrieval) version
             |> Http.send
-          
+
           let forceRefreshUrl = forceRefreshUrl response
-          
+
           match forceRefreshUrl, response.statusCode with
           | Some url, _ -> return (Some url, None)
           | None, 200 | None, 404 | None, 403 ->
             match PageObj.fromJson response.responseText propsDecoder sharedDecoder with
-            | Ok pageObj -> 
+            | Ok pageObj ->
 
-              //printfn $"propsToGet: {propsToGet}"
-              
-              let resolvedProps = 
+              // Now that we have props, we can get field names dynamically
+              let fieldNames =
+                match pageObj.props with
+                | Some props -> toFieldNames props
+                | None -> [||]
+
+              // Get cache after we know the field names
+              let cacheMap = getCacheForComponent requestedComponentName fieldNames
+
+              // Determine cache behavior
+              let propsToGet, shouldWriteCache, newCache =
+                match cacheRetrieval with
+                | CheckForCached toGet ->
+                  let nextProps, shouldWrite = resolveNextPropsToEval isReloadAfterMount cacheMap toGet propsToEval fieldNames
+                  nextProps, shouldWrite, (cacheMap |> Map.filter (fun k v -> toGet |> Array.contains k))
+                | CheckForAll ->
+                  let nextProps, shouldWrite = resolveNextPropsToEval isReloadAfterMount cacheMap fieldNames propsToEval fieldNames
+                  nextProps, shouldWrite, cacheMap
+                | SkipCache ->
+                  let nextProps, shouldWrite = resolveNextPropsToEval isReloadAfterMount cacheMap [||] propsToEval fieldNames
+                  let filteredCache =
+                    match nextProps with
+                    | Eager | Skip -> Map.empty
+                    | EagerOnly toGet | Lazy toGet -> (cacheMap |> Map.filter (fun k v -> toGet |> Array.contains k |> not))
+                  nextProps, shouldWrite, filteredCache
+
+              let resolvedProps =
                 match pageObj.props with
                 | Some props ->
-                  // pass props through function to swap in
-                  resolver (cacheMap, props)
+                  // pass props through function to swap in cached values
+                  let resolved = resolver (newCache, props)
+                  resolved
                 | None -> failwith "No props provided"
-                            
-              let resolvedPageObj = 
+
+              let resolvedPageObj =
                 { pageObj with
                     props = Some resolvedProps
                     reloadOnMount =
                       { pageObj.reloadOnMount with
-                          propsToEval = Some propsToGet
-                          shouldReload = defaultArg shouldReload pageObj.reloadOnMount.shouldReload
-                          //cacheStorage = Some cacheStorage
-                          //cacheRetrieval = Some cacheRetrieval
+                          propsToEval = propsToGet
                       }
                 }
-              
-              
+
               // handle caching to session storage here
-              match resolvedPageObj.props, cacheStorage with 
+              match resolvedPageObj.props, cacheStorage with
               | Some props, StoreAll when shouldWriteCache ->
                 let cacheToStore = toMap (Some fieldNames, props)
-                //printfn $"cache: {cacheToStore}"
-                cacheToStore 
+                cacheToStore
                   |> Array.iter (fun (k,v) ->
-                    let stringEncoded = encodeCacheObj v
-                    let stripped = Regex.Replace(stringEncoded, "[@\[\]]", "")
-                    let parts = stripped.Split(',')
-                    let isError = parts |> Array.contains "\"Error\""
-                    if not isError then
+                    // Use needsCacheReplacement which handles both Deferred and legacy AsyncData
+                    let needsReplacement, stringEncoded = needsCacheReplacement v
+                    if not needsReplacement then
                       sessionStorage.setItem($"cache:{resolvedPageObj.``component``}:{k}", stringEncoded )
                     else
-                      printfn $"skipping cache storage of async function \"{k}\" due to error in return value")
-              | Some props, StoreToCache toSave when shouldWriteCache -> 
-                //printfn $"resolved: {props}"
-                //if shouldWriteToCache then printfn $"saving to cache: {toSave}"
+                      printfn $"skipping cache storage of async function \"{k}\" due to pending/error state")
+              | Some props, StoreToCache toSave when shouldWriteCache ->
                 let fieldNameSet = Set.ofArray fieldNames
                 let toSaveSet = Set.ofArray toSave
                 let intersection = Set.intersect toSaveSet fieldNameSet
                 if (intersection |> Set.isEmpty |> not) then
                   let intersectArr = intersection |> Set.toArray
                   let cacheToStore = toMap (Some intersectArr, props)
-                  //printfn $"cache: {cacheToStore}"
-                  cacheToStore 
+                  cacheToStore
                     |> Array.iter (fun (k,v) ->
                       sessionStorage.setItem($"cache:{resolvedPageObj.``component``}:{k}", encodeCacheObj v ) )
 
               | _ -> ()
-              
+
               return None, Some resolvedPageObj
             | Error err ->
               printfn $"error parsing JSON reply: {err}"
