@@ -13,7 +13,6 @@ open Fable.Core
 open Inertia
 open Core
 open Inertial.Lib
-open Inertial.Lib.Types
 open Thoth.Json
 
 [<RequireQualifiedAccess>]
