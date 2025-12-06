@@ -40,7 +40,7 @@
     <PackageReference Include="Fable.Reaction" Version="3.5.0" />
     <PackageReference Include="Fable.SimpleHttp" Version="3.6.0" />
     <PackageReference Include="Sutil" Version="2.0.16" />
-    <PackageReference Update="FSharp.Core" Version="9.0.101" />
+    <PackageReference Update="FSharp.Core" Version="10.0.100" />
   </ItemGroup>
 
   <!-- Add source files to "fable" folder in Nuget package -->

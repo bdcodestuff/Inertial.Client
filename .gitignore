@@ -713,3 +713,9 @@ dist
 dist/
 .pre-commit-config.yaml
 .direnv/
+.DS_Store
+
+# Fable generated files
+*.fs.js
+*.fs.js.map
+fable_modules/
