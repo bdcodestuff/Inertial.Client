@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="RouteTests.fs" />
+    <Compile Include="CoreTests.fs" />
+    <Compile Include="DeferredTests.fs" />
+    <Compile Include="InertiaTests.fs" />
+    <Compile Include="Main.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Fable.Core" Version="4.3.0" />
+    <PackageReference Include="Fable.Mocha" Version="2.17.0" />
+    <ProjectReference Include="../../src/Inertial.Client/Inertial.Client.fsproj" />
+  </ItemGroup>
+
+</Project>

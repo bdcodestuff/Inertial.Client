@@ -1,0 +1,11 @@
+{
+  "name": "inertial-client-tests",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "fable Inertial.Client.Tests.fsproj -o build && node build/Main.js"
+  },
+  "devDependencies": {
+    "mocha": "^10.2.0"
+  }
+}
