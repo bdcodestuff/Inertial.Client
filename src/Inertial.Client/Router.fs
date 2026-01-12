@@ -217,7 +217,8 @@ module Router =
                 a.cancellationTokenSource.Dispose()
 
                 // save scroll location of outgoing page on each router location change to enable restoring it later if requested
-                match pageObj with
+                // Use a.pageObj (the current/outgoing page) NOT pageObj (the new/incoming page)
+                match a.pageObj with
                 | Some p ->
                   Scroll.save p.``component`` window.pageYOffset
                 | None -> ()
@@ -244,10 +245,22 @@ module Router =
               match n.progress with
               | ShowProgressBar when not n.isForwardBack -> NProgress.``done`` ()
               | _ -> ()
-              // restore y-scroll position is it's stored in session storage
-              match n.scroll with
-              | ResetScroll -> ()
-              | KeepVerticalScroll url -> window.scroll(0,Scroll.restore url)
+              // restore y-scroll position if it's stored in session storage
+              // Check both explicit scroll parameter and server-side preserveScroll flag
+              let currentLocation = n.pathStore |> Store.get
+              let shouldPreserveScroll =
+                match n.scroll with
+                | KeepVerticalScroll _ -> true
+                | ResetScroll ->
+                    // Check if server wants scroll preserved
+                    match currentLocation.pageObj with
+                    | Some obj -> obj.preserveScroll
+                    | None -> false
+
+              if shouldPreserveScroll then
+                match currentLocation.pageObj with
+                | Some obj -> window.scroll(0, Scroll.restore obj.``component``)
+                | None -> ()
           )
         .catch(
           // catch errors (most commonly this fires because a pending page request was cancelled by the user making a newer, superseding page load request)
