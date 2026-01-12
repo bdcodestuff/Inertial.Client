@@ -53,13 +53,16 @@ module Inertia =
           |> Http.header (Headers.create "X-Inertial-Full-Component" currentComponentName)
         | Skip ->
           withCurrentId
-        | EagerOnly props | Lazy props when props.Length > 0 ->
+        | EagerOnly props when props.Length > 0 ->
+          // EagerOnly triggers immediate server-side evaluation
           let propList = props |> Array.reduce (fun x y -> $"{x}, {y}")
           withCurrentId
           |> Http.header (Headers.create "X-Inertial-Partial-Component" currentComponentName)
           |> Http.header (Headers.create "X-Inertial-Partial-Data" propList)
-        | EagerOnly _ | Lazy _ ->
-          // Empty props array - treat like Skip
+        | Lazy _ | EagerOnly _ ->
+          // Lazy should NOT send partial data headers - let server return Pending
+          // and let reloadOnMount trigger the actual evaluation after page renders.
+          // Empty EagerOnly also treated like Skip.
           withCurrentId     
 
       // add CSRF token header
@@ -243,12 +246,20 @@ module Inertia =
                   resolved
                 | None -> failwith "No props provided"
 
+              // Determine final propsToEval for reloadOnMount:
+              // - If server explicitly set Lazy (for deferred loading pattern), preserve it
+              // - Otherwise use client's calculated propsToGet
+              let finalPropsToEval =
+                match pageObj.reloadOnMount.propsToEval with
+                | Lazy _ -> pageObj.reloadOnMount.propsToEval  // Preserve server's Lazy setting
+                | _ -> propsToGet  // Use client's calculation for other cases
+
               let resolvedPageObj =
                 { pageObj with
                     props = Some resolvedProps
                     reloadOnMount =
                       { pageObj.reloadOnMount with
-                          propsToEval = propsToGet
+                          propsToEval = finalPropsToEval
                       }
                 }
 
