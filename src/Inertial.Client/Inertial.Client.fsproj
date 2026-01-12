@@ -39,7 +39,7 @@
     <PackageReference Include="Fable.Promise" Version="3.2.0" />
     <PackageReference Include="Fable.Reaction" Version="3.5.0" />
     <PackageReference Include="Fable.SimpleHttp" Version="3.6.0" />
-    <ProjectReference Include="../../../Inertial.Lib/src/Inertial.Lib/Inertial.Lib.fsproj" />
+    <PackageReference Include="Inertial.Lib" Version="0.1.5" />
     <PackageReference Include="Sutil" Version="2.0.16" />
     <PackageReference Update="FSharp.Core" Version="10.0.100" />
   </ItemGroup>
