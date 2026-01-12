@@ -269,3 +269,109 @@ Router.router
     currentUserId
     renderPage
 ```
+
+---
+
+## Using Custom JavaScript
+
+Projects using Inertial.Client can integrate custom JavaScript in several ways:
+
+### Import JS Files Alongside F# Code
+
+Place `.js` files in your client project and import them:
+
+```javascript
+// src/Client/utils.js
+export function formatDate(d) {
+    return new Intl.DateTimeFormat('en-US').format(d);
+}
+```
+
+```fsharp
+// src/Client/App.fs
+open Fable.Core
+
+[<Import("formatDate", from="./utils.js")>]
+let formatDate: System.DateTime -> string = jsNative
+```
+
+### npm Packages
+
+Install via npm and import:
+
+```bash
+npm install chart.js
+```
+
+```fsharp
+[<Import("Chart", from="chart.js")>]
+let Chart: obj = jsNative
+
+// Or with types
+type IChart =
+    abstract member destroy: unit -> unit
+    abstract member update: unit -> unit
+
+[<Import("Chart", from="chart.js")>]
+let Chart: obj -> IChart = jsNative
+```
+
+### Global Scripts via HTML
+
+Add to your base HTML template:
+
+```html
+<script src="/js/custom/myLibrary.js"></script>
+```
+
+Then access from F#:
+
+```fsharp
+[<Emit("window.MyLibrary.doThing($0)")>]
+let doThing (x: string): unit = jsNative
+```
+
+### Inline JavaScript with Emit
+
+For one-off JavaScript expressions:
+
+```fsharp
+open Fable.Core
+
+[<Emit("console.log($0)")>]
+let log (msg: string): unit = jsNative
+
+[<Emit("eval($0)")>]
+let evalJs (code: string): obj = jsNative
+
+// Dynamic expression
+let result = emitJsExpr () "navigator.userAgent"
+```
+
+### Dynamic Imports (Lazy Loading)
+
+```fsharp
+[<Emit("import($0)")>]
+let importModule (path: string): JS.Promise<obj> = jsNative
+
+// Usage
+let loadChart() = promise {
+    let! chartModule = importModule "chart.js"
+    // use chartModule
+}
+```
+
+### Typical Project Structure
+
+```
+src/
+├── Client/
+│   ├── Client.fsproj
+│   ├── App.fs
+│   ├── custom.js         ← Your custom JS
+│   └── package.json      ← npm dependencies
+└── Server/
+    └── ...
+```
+
+Your bundler (Vite/webpack/esbuild) handles resolving JS imports when Fable compiles.
