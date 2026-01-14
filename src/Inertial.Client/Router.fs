@@ -551,11 +551,6 @@ module Router =
               // it prevents infinite reload loops
               // the obj.reloadOnMount.shouldReload is a boolean flag set on the server side that specifies if the component is intended to reload on mount or not
 
-              // DEBUG: trace reloadOnMount flow
-              Browser.Dom.console.log($"[reloadOnMount] component={obj.``component``}, allowPartialReload={location.allowPartialReload}")
-              Browser.Dom.console.log($"[reloadOnMount] propsToEval={obj.reloadOnMount.propsToEval}")
-              Browser.Dom.console.log($"[reloadOnMount] cacheRetrieval={obj.reloadOnMount.cacheRetrieval}")
-
               if location.allowPartialReload then
                 match obj.reloadOnMount.propsToEval with
                 | Lazy a ->
@@ -564,13 +559,10 @@ module Router =
                   | CheckForAll | CheckForCached _ ->
                     // Check cache for requested fields BEFORE triggering HTTP request
                     let cacheMap = Inertia.getCacheForComponent (Some obj.``component``) a
-                    let cachedFields = cacheMap |> Map.toArray |> Array.map fst
                     let missingFields = a |> Array.filter (fun f -> not (cacheMap.ContainsKey f))
-                    Browser.Dom.console.log($"[reloadOnMount] Checking cache - cached: {cachedFields}, missing: {missingFields}")
 
                     if missingFields.Length = 0 then
                       // All requested fields are in cache - apply cached values to props and update store
-                      Browser.Dom.console.log("[reloadOnMount] All data found in cache, applying cached values")
                       match obj.props with
                       | Some props ->
                         // Use the resolver to apply cached values to props
@@ -587,19 +579,14 @@ module Router =
                               pageObj = Some updatedPageObj
                               allowPartialReload = false  // Prevent infinite reload loops
                           })
-                        Browser.Dom.console.log("[reloadOnMount] Cache applied, store updated")
-                      | None ->
-                        Browser.Dom.console.log("[reloadOnMount] No props to resolve")
+                      | None -> ()
                     else
                       // Some fields missing - reload only the missing ones
-                      Browser.Dom.console.log($"[reloadOnMount] Triggering reload for missing props: {missingFields}")
                       reload config router (EagerOnly missingFields) HideProgressBar obj.reloadOnMount.cacheStorage obj.reloadOnMount.cacheRetrieval false
                   | SkipCache ->
                     // Don't check cache, always reload
-                    Browser.Dom.console.log($"[reloadOnMount] SkipCache - Triggering reload for Lazy props: {a}")
                     reload config router (EagerOnly a) HideProgressBar obj.reloadOnMount.cacheStorage obj.reloadOnMount.cacheRetrieval false
-                | _ ->
-                  Browser.Dom.console.log("[reloadOnMount] propsToEval is not Lazy, skipping reload")
+                | _ -> ()
 
             | None -> ()
 
