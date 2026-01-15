@@ -557,8 +557,8 @@ module Router =
                   // Check if cache should be consulted before reloading
                   match obj.reloadOnMount.cacheRetrieval with
                   | CheckForAll | CheckForCached _ ->
-                    // Check cache for requested fields BEFORE triggering HTTP request
-                    let cacheMap = Inertia.getCacheForComponent (Some obj.``component``) a
+                    // Check cache for requested fields BEFORE triggering HTTP request (use URL for cache key)
+                    let cacheMap = Inertia.getCacheForComponent (Some obj.``component``) (Some obj.url) a
                     let missingFields = a |> Array.filter (fun f -> not (cacheMap.ContainsKey f))
 
                     if missingFields.Length = 0 then

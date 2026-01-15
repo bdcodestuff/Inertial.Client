@@ -104,13 +104,18 @@ module Inertia =
         
       withVersion
 
-  let getCacheForComponent (componentName:string option) (allFieldNames:string array) =
-    //printfn $"Debug -- comp: {componentName}, allFields: {allFieldNames}"
-    match componentName with
-    | Some currentComponentName -> 
+  /// Extract URL path without query parameters for use as cache key
+  let private urlPathForCache (url: string) =
+    url.Split('?').[0]
+
+  let getCacheForComponent (componentName:string option) (url:string option) (allFieldNames:string array) =
+    //printfn $"Debug -- comp: {componentName}, url: {url}, allFields: {allFieldNames}"
+    match componentName, url with
+    | Some _, Some currentUrl ->
+      let urlPath = urlPathForCache currentUrl
       allFieldNames
       |> Array.map (fun item ->
-        let stored = sessionStorage.getItem $"cache:{currentComponentName}:{item}"
+        let stored = sessionStorage.getItem $"cache:{urlPath}:{item}"
         if stored <> null && stored <> "" then
           //let decoded = Decode.fromString cacheResultDecoder stored
           let decoded = decodeCacheFromString stored
@@ -121,10 +126,13 @@ module Inertia =
             None
         else
           //printfn $"No stored data for {item}"
-          None) 
+          None)
       |> Array.choose id
       |> Map.ofArray
-    | None ->
+    | _, None ->
+      printfn "Could not find URL for cache lookup"
+      Map.empty
+    | None, _ ->
       printfn "Could not find component in map"
       Map.empty
   
@@ -218,8 +226,8 @@ module Inertia =
                 | Some props -> toFieldNames props
                 | None -> [||]
 
-              // Get cache after we know the field names
-              let cacheMap = getCacheForComponent requestedComponentName fieldNames
+              // Get cache after we know the field names (use URL for cache key)
+              let cacheMap = getCacheForComponent requestedComponentName (Some url) fieldNames
 
               // Determine cache behavior
               let propsToGet, shouldWriteCache, newCache =
@@ -263,7 +271,8 @@ module Inertia =
                       }
                 }
 
-              // handle caching to session storage here
+              // handle caching to session storage here (use URL path for cache key)
+              let cacheUrlPath = urlPathForCache resolvedPageObj.url
               match resolvedPageObj.props, cacheStorage with
               | Some props, StoreAll when shouldWriteCache ->
                 let cacheToStore = toMap (Some fieldNames, props)
@@ -272,7 +281,7 @@ module Inertia =
                     // Use needsCacheReplacement which handles both Deferred and legacy AsyncData
                     let needsReplacement, stringEncoded = needsCacheReplacement v
                     if not needsReplacement then
-                      sessionStorage.setItem($"cache:{resolvedPageObj.``component``}:{k}", stringEncoded )
+                      sessionStorage.setItem($"cache:{cacheUrlPath}:{k}", stringEncoded )
                     else
                       printfn $"skipping cache storage of async function \"{k}\" due to pending/error state")
               | Some props, StoreToCache toSave when shouldWriteCache ->
@@ -284,7 +293,7 @@ module Inertia =
                   let cacheToStore = toMap (Some intersectArr, props)
                   cacheToStore
                     |> Array.iter (fun (k,v) ->
-                      sessionStorage.setItem($"cache:{resolvedPageObj.``component``}:{k}", encodeCacheObj v ) )
+                      sessionStorage.setItem($"cache:{cacheUrlPath}:{k}", encodeCacheObj v ) )
 
               | _ -> ()
 
