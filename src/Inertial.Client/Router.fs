@@ -383,6 +383,25 @@ module Router =
   let delete config pathStore url propsToGet progress cacheStorage cacheRetrieval =
     doNav config Delete pathStore url propsToGet progress cacheStorage cacheRetrieval false |> navigateTo
 
+  /// Triggers programmatic client-side navigation to a URL (GET request)
+  /// Use this for scenarios where you need to navigate without a click event (e.g., after upload completion)
+  let visit config pathStore url propsToGet progress scroll cacheStorage cacheRetrieval =
+    createNavigation
+      config
+      pathStore
+      (Get [])
+      url
+      propsToGet
+      false  // isForwardBack
+      false  // doFullReloadOnArrival
+      progress
+      scroll
+      false  // isPartialReload
+      cacheStorage
+      cacheRetrieval
+      false  // isSSEResponse
+    |> navigateTo
+
   /// Client facing - creates a partially applied Link function with config and router bound
   let Link
     (config: RouterConfig<'Props,'Shared>)
@@ -408,7 +427,16 @@ module Router =
   let Patch config router = patch config router
 
   let Delete config router = delete config router
-  
+
+  /// Client facing - creates a partially applied Visit function with config and router bound
+  /// Usage: let visit = Router.Visit routerConfig router
+  ///        visit "/app/photos" Skip ShowProgressBar ResetScroll CacheStorage.StoreNone CacheRetrieval.SkipCache
+  let Visit
+    (config: RouterConfig<'Props,'Shared>)
+    router
+    : string -> PropsToEval -> ProgressBar -> ScrollPosition -> CacheStorage -> CacheRetrieval -> unit
+    = visit config router
+
   /// Instantiate a router using Sutil store to trigger reactive responses on any change
   let createRouterStore<'Props,'Shared>() =
     Store.make
