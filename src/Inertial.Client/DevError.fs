@@ -30,20 +30,14 @@ module DevError =
     }
 
     // ============================================
-    // Global Error Store
+    // Global Error Store (Sutil reactive store)
     // ============================================
 
-    /// Global mutable store for last HTTP error
-    let mutable private lastHttpError : HttpError option = None
-
-    /// Get the last HTTP error
-    let getLastError () : HttpError option = lastHttpError
-
-    /// Set the last HTTP error (can be called externally if needed)
-    let setLastError (error: HttpError) = lastHttpError <- Some error
+    /// Global reactive store for last HTTP error
+    let private lastError : IStore<HttpError option> = Store.make None
 
     /// Clear the last HTTP error
-    let clearLastError () = lastHttpError <- None
+    let private clearLastError () = Store.set lastError None
 
     // ============================================
     // Fetch Interceptor (patch window.fetch)
@@ -129,16 +123,13 @@ module DevError =
             // Patch fetch on component mount
             patchFetch ()
 
-            // Store for current error
-            let errorStore : IStore<HttpError option> = Store.make None
-
-            // Check for new errors periodically
+            // Check for new errors periodically and update global store
             let checkForErrors () =
                 match readJsError () with
                 | Some error ->
                     let ts = error.Timestamp.ToString("o")
                     if ts <> Store.get lastDisplayedTimestamp then
-                        Store.set errorStore (Some error)
+                        Store.set lastError (Some error)
                         Store.set isErrorPanelOpen true
                         Store.set lastDisplayedTimestamp ts
                 | None -> ()
@@ -146,7 +137,7 @@ module DevError =
             // Start polling interval (every 500ms)
             let _ = window.setInterval((fun () -> checkForErrors()), 500)
 
-            Bind.el (errorStore, fun errorOpt ->
+            Bind.el (lastError, fun errorOpt ->
                 Bind.el (isErrorPanelOpen, fun isOpen ->
                     match errorOpt with
                     | None -> Html.none
@@ -206,7 +197,7 @@ module DevError =
                                             Html.button [
                                                 Attr.className "p-1 hover:bg-red-700 rounded transition-colors cursor-pointer"
                                                 Ev.onClick (fun _ ->
-                                                    Store.set errorStore None
+                                                    clearLastError()
                                                     clearJsLastHttpError())
                                                 Html.i [
                                                     Attr.custom("data-lucide", "x")
