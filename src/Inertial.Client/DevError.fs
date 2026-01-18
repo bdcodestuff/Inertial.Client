@@ -50,7 +50,7 @@ module DevError =
     // ============================================
 
     /// Patch fetch to intercept errors - stores error info in window.__lastHttpError
-    [<Emit("(function(){if(!window.__fetchPatched){var o=window.fetch;window.fetch=function(u,p){return o.apply(this,arguments).then(function(r){if(!r.ok&&r.status>=400){return r.clone().text().then(function(b){window.__lastHttpError={statusCode:r.status,statusText:r.statusText||('HTTP '+r.status),responseBody:b,url:typeof u==='string'?u:u.url,method:(p&&p.method)||'GET',timestamp:new Date().toISOString()};return r})}return r})};window.__fetchPatched=true}})())")>]
+    [<Emit("(function(){if(!window.__fetchPatched){var o=window.fetch;window.fetch=function(u,p){return o.apply(this,arguments).then(function(r){if(!r.ok&&r.status>=400){return r.clone().text().then(function(b){window.__lastHttpError={statusCode:r.status,statusText:r.statusText||('HTTP '+r.status),responseBody:b,url:typeof u==='string'?u:u.url,method:(p&&p.method)||'GET',timestamp:new Date().toISOString()};return r})}return r})};window.__fetchPatched=true}})()")>]
     let private patchFetch () : unit = jsNative
 
     /// Read the last error from window.__lastHttpError
