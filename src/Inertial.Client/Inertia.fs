@@ -217,6 +217,8 @@ module Inertia =
           match forceRefreshUrl, response.statusCode with
           | Some url, _ -> return (Some url, None)
           | None, 200 | None, 404 | None, 403 ->
+            // Clear any previous error on successful response
+            Core.clearHttpError ()
             match PageObj.fromJson response.responseText propsDecoder sharedDecoder with
             | Ok pageObj ->
 
@@ -300,8 +302,28 @@ module Inertia =
               return None, Some resolvedPageObj
             | Error err ->
               printfn $"error parsing JSON reply: {err}"
+              // Capture JSON parsing error
+              Core.setHttpError {
+                StatusCode = response.statusCode
+                StatusText = "JSON Parse Error"
+                ResponseBody = $"Failed to parse response: {err}\n\nRaw response:\n{response.responseText}"
+                Url = url
+                Method = httpVerb.ToMethodHttp().ToString()
+                Timestamp = System.DateTime.Now
+              }
               return None, None
           | _ ->
+            // Capture HTTP error for non-success status codes (e.g., 500, 502, etc.)
+            let methodStr = httpVerb.ToMethodHttp().ToString()
+            printfn $"HTTP error {response.statusCode} for {methodStr} {url}"
+            Core.setHttpError {
+              StatusCode = response.statusCode
+              StatusText = $"HTTP {response.statusCode}"
+              ResponseBody = response.responseText
+              Url = url
+              Method = methodStr
+              Timestamp = System.DateTime.Now
+            }
             return None, None
       }
 

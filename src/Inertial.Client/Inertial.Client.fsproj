@@ -4,7 +4,7 @@
     <TargetFramework>netstandard2.0</TargetFramework>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageId>Inertial.Client</PackageId>
-    <Version>0.2.3</Version>
+    <Version>0.2.4</Version>
     <Authors>Bryan Macrie</Authors>
     <RepositoryUrl>https://github.com/bdcodestuff/Inertial.Client</RepositoryUrl>
   </PropertyGroup>
@@ -30,6 +30,7 @@
     <Compile Include="RxSSE.fs" />
     <Compile Include="Deferred.fs" />
     <Compile Include="Router.fs" />
+    <Compile Include="DevError.fs" />
   </ItemGroup>
 
   <ItemGroup>

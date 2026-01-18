@@ -6,6 +6,24 @@ open System.Threading
 open Inertial.Lib.Types
 
 module Core =
+  /// HTTP error information captured from failed requests
+  type HttpError = {
+    StatusCode: int
+    StatusText: string
+    ResponseBody: string
+    Url: string
+    Method: string
+    Timestamp: DateTime
+  }
+
+  /// Global mutable store for last HTTP error (for dev mode debugging)
+  let mutable lastHttpError : HttpError option = None
+
+  /// Clear the last HTTP error
+  let clearHttpError () = lastHttpError <- None
+
+  /// Set the last HTTP error
+  let setHttpError (error: HttpError) = lastHttpError <- Some error
   type Method =
     | Get of List<string*obj>
     | Post of List<string*obj>
