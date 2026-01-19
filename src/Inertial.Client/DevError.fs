@@ -91,6 +91,20 @@ module DevError =
         || hostname.StartsWith("192.168.")
         || hostname.StartsWith("10.")
 
+    /// Initialize DevError early to intercept fetch errors from the start.
+    /// Call this at the top of your app() function, before creating the router.
+    /// Only patches fetch in dev mode (localhost, local IPs).
+    ///
+    /// Example:
+    /// ```fsharp
+    /// let app () =
+    ///     DevError.init ()  // Patch fetch early
+    ///     let router = Router.createRouterStore()
+    ///     // ...
+    /// ```
+    let init () : unit =
+        if isDev () then patchFetch ()
+
     // ============================================
     // Error Display Stores
     // ============================================
